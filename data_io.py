@@ -14,36 +14,15 @@ def read_CHEN_csvfile() :
         data_tmp.pop(0) # remove column name
         data = data + data_tmp
     return data
-def uploading_fixed_positions(dni, pos_matrix, refer_pos, ground_truth_positions):
-    """
-    使用 lcc_transformation 進行 LCC 投影，並將「鄯善」與「都護治/烏壘...」對齊到畫布上的固定位置。
-    回傳:
-      - 更新後的 pos_matrix
-      - 固定點列表 fixed_positions_list = [
-            ['鄯善', x_pixel, y_pixel],
-            ['都護治/烏壘', x_pixel, y_pixel]
-        ]
-    """
-    FIXPOINTS = ['都護治/烏壘']
-    
-    gt_xy_km = lcc_transformation(dni, ground_truth_positions)
-    km2pix = 1.0 / (10 * 0.415)
-    fixed_positions_list = []
-    
-    # SHAN_SHAN   refer_pos 已是 pixel 座標，所以鄯善對齊保持不變
-    fixed_positions_list.append(['鄯善', refer_pos[0], refer_pos[1]])
-    pos_matrix[dni['鄯善']] = [refer_pos[0], refer_pos[1]]
-    
-    # FIX POINTS
-    for fix_cities in FIXPOINTS :
-        index = dni[fix_cities]
-        (lcc_x,lcc_y) = gt_xy_km[index]
-        px = lcc_x * km2pix + refer_pos[0]
-        py = lcc_y * km2pix + refer_pos[1]
-        pos_matrix[index] = [px,py]
-        fixed_positions_list.append([fix_cities,px,py])
-    
-    return pos_matrix, fixed_positions_list
+def classify_nodes():
+    dt = FILE_PATHS["classification_data"]
+    groupdni = {}
+    with open( dt , newline='', encoding='utf-8' ) as csvfile :
+        rows = csv.reader(csvfile)
+        for row in rows :
+            groupdni[row[0]] = int(row[1])
+        groupdni['都護治/烏壘']=1
+    return groupdni
 def uploading_directional_data():
     csv_file_path = FILE_PATHS["directional_data"]
     directional_data= []

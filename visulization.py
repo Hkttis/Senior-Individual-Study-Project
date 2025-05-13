@@ -6,14 +6,14 @@ import numpy as np
 
 from metrics import calculate_kruskals_stress,stress_function
 from geometry import lcc_transformation
+from data_io import read_CHEN_csvfile,uploading_ground_truth
 
 
-def plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists):
+def plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists,current_stress):
     # refresh the screen
     screen.fill((255, 255, 255)) # fill the screen with white to clear previous frame
     # Calculate and display stress ； show cnt
     stress_font = pygame.font.SysFont("Microsoft YaHei", 24)
-    current_stress = stress_function(data, dni, pos_matrix)
     stress_text = stress_font.render(f"Stress: {current_stress:.2f}", True, (0, 0, 0)) # displays stress with two decimal places.
     screen.blit(stress_text, (10, 10))  # Display at top-left corner
     cnt_text = stress_font.render(f"Wrong edge directions: {cnt}", True, (0, 0, 0))
@@ -30,7 +30,7 @@ def plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertic
         text_surface = font.render(label, True, (0, 0, 0))
         screen.blit(text_surface, (node.position[0] - 10, node.position[1] - 10))
     pygame.display.flip() # Updates the entire screen with new frame data.
-    return screen,space,current_stress
+    return screen,space
 
 def plot_stress_convergence_log(stress_history):
     """
@@ -392,3 +392,15 @@ def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos,
             if e.type == pygame.QUIT:
                 running = False
     pygame.quit()
+def model_cmp(vertice,dni,pos_matrix) :
+    refer_pos = [600,500]
+    align_pos = pos_matrix[dni['鄯善']]
+    for pos in pos_matrix :
+        pos[0] = (pos[0]-align_pos[0])*0.412 + refer_pos[0]
+        pos[1] = (pos[1]-align_pos[1])*0.412 + refer_pos[1]
+    data = read_CHEN_csvfile()
+    wrong_direction_lists = []
+    visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists, zoom_area=None)
+    visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists, zoom_area=(500, 325, 800, 400))
+    ground_truth_positions = uploading_ground_truth(vertice,dni)
+    ground_truth_comparison(vertice,dni,data,ground_truth_positions,refer_pos,pos_matrix)
