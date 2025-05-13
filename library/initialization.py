@@ -1,6 +1,6 @@
 import numpy as np
-from geometry import *
-from data_io import *
+from library.geometry import *
+from library.data_io import *
 
 
 def generate_CHEN_initial_positions (refer_pos): # Initialize position of points from CHEN_STRESSMAJORIZATION/random positions

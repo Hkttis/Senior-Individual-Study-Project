@@ -22,5 +22,3 @@ def main_function(): # avoid global parameters
 
 if __name__ == "__main__":
     main_function()
-    import spring_confidence as sc
-    # mu, covs, vertice = sc.bootstrap_and_plot()

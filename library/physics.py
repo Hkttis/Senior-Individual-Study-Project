@@ -1,10 +1,11 @@
 import pygame
 import pymunk
+import pymunk.pygame_util
 import numpy as np
 
-from config import *
-from visulization import *
-from metrics import *
+from library.config import *
+from library.visulization import *
+from library.metrics import *
 
 def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list) : # Main PS function
     '''initialize constants for main PS'''

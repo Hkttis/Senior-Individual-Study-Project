@@ -4,9 +4,9 @@ import os
 from math import *
 import numpy as np
 
-from metrics import calculate_kruskals_stress,stress_function
-from geometry import lcc_transformation
-from data_io import read_CHEN_csvfile,uploading_ground_truth
+from library.metrics import calculate_kruskals_stress,stress_function
+from library.geometry import lcc_transformation
+from library.data_io import read_CHEN_csvfile,uploading_ground_truth
 
 
 def plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists,current_stress):

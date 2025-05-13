@@ -1,6 +1,6 @@
 import csv
-from config import *
-from spring_main import lcc_transformation
+from library.config import *
+from library.geometry import lcc_transformation
 
 # data input
 def read_CHEN_csvfile() :

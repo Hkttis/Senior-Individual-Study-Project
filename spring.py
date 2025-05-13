@@ -858,5 +858,5 @@ def main_function(): # avoid global parameters
     post_procession(vertice,dni,data,refer_pos,wrong_direction_lists,stress_history,pos_matrix)
 if __name__ == "__main__":
     main_function()
-    import spring_confidence as sc
+    # import spring_confidence as sc
     # mu, covs, vertice = sc.bootstrap_and_plot()
