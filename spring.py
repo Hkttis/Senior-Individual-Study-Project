@@ -8,6 +8,9 @@ from math import *
 import math
 import numpy as np
 import csv
+# temporarily stop the plotting_physics_simulation function in run_phy... and stress_history
+# and plot_stress_convergence_log in post_procession
+
 
 # using dictionary to modularize file paths
 FILE_PATHS = {
@@ -18,6 +21,10 @@ FILE_PATHS = {
     "font_path": "C:/Windows/Fonts/msyh.ttc",
     "ground_truth_path" : "C:/Users/justi/Desktop/project/csv doc utf8/西漢古城地理位置資訊.csv"
 }
+# default force parameters (for bootstrap & normal runs)
+SPRING_STIFFNESS_BASE   = 15000
+REPULSION_STRENGTH_BASE = 5000
+DIRECTIONAL_FORCE_MAGNITUDE_BASE = 10000
 
 def generate_CHEN_initial_positions (refer_pos): # Initialize position of points from CHEN_STRESSMAJORIZATION/random positions
     data = read_CHEN_csvfile()
@@ -175,14 +182,15 @@ def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_p
     fixmass = 1e7
     radius = 5
     vrange = 100
-    spring_stiffness = 15000 # 10000 for stick
-    fix_spring_stiffness = 10000
+    
+    spring_stiffness   = SPRING_STIFFNESS_BASE
+    repulsion_strength = REPULSION_STRENGTH_BASE
+    directional_force_magnitude = DIRECTIONAL_FORCE_MAGNITUDE_BASE
+    
     spring_damping = 50
-    fix_spring_damping = 50
-    repulsion_strength = 5000 #5000
     min_distance = 0.1
     resistance = 10
-    directional_force_magnitude = 10000 #10000
+    
     '''set up PS'''
     pygame.init()
     screen = pygame.display.set_mode((1200, 750))
@@ -246,9 +254,10 @@ def run_physics_simulation(min_distance,repulsion_strength,resistance,directiona
         for i,node in enumerate(nodes) :
             pos_matrix[i] = nodes[i].position
             # pos_matrix = shift(pos_matrix,1,[600,375]) # shift the points to the center to avoid digressing
-        screen,space,current_stress = plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists)
-        stress_history.append(current_stress)
-        if (current_stress < 150 and cnt < 3) or (iteration > 2000):
+        # screen,space,current_stress = plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists)
+        stress_history = []
+        # stress_history.append(current_stress)
+        if iteration > 2000:
             # print(f"physics_simulation stops at iteration {iteration}")
             break
     return wrong_direction_lists,stress_history,pos_matrix
@@ -335,7 +344,7 @@ def apply_forces(min_distance,repulsion_strength,resistance,directional_force_ma
                 
         else : # for those with more specific direction (東南、西北), the cos(theta) between directional vector and pos_vector must be over cos(pi/8)
             cos_similarity = np.dot(pos_vector,direction_dict2[row[2]])/sqrt(2)
-            if cos_similarity < 1/sqrt(2):  # 0.924 : # theta > pi/8
+            if cos_similarity < 1/sqrt(2):  # 0.924 : theta > pi/8
                 cnt+=1
                 wrong_direction_lists.append(row)
                 if np.dot(ver_vector1,direction_dict2[row[2]])>=np.dot(ver_vector2,direction_dict2[row[2]]) :
@@ -354,7 +363,7 @@ def apply_forces(min_distance,repulsion_strength,resistance,directional_force_ma
     return nodes,cnt,wrong_direction_lists
 
 def post_procession(vertice,dni,data,refer_pos,wrong_direction_lists,stress_history,pos_matrix): # for any post_processions will be put inside
-    plot_stress_convergence_log(stress_history)
+    # plot_stress_convergence_log(stress_history)
     visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists, zoom_area=None)
     visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists, zoom_area=(500, 325, 800, 400))
     ground_truth_positions = uploading_ground_truth(vertice,dni)
@@ -849,4 +858,5 @@ def main_function(): # avoid global parameters
     post_procession(vertice,dni,data,refer_pos,wrong_direction_lists,stress_history,pos_matrix)
 if __name__ == "__main__":
     main_function()
-
+    import spring_confidence as sc
+    # mu, covs, vertice = sc.bootstrap_and_plot()
