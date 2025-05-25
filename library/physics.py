@@ -79,7 +79,7 @@ def run_physics_simulation(min_distance,repulsion_strength,resistance,directiona
             pos_matrix[i] = nodes[i].position
             # pos_matrix = shift(pos_matrix,1,[600,375]) # shift the points to the center to avoid digressing
         current_stress = stress_function(data,dni,pos_matrix)
-        screen,space = plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists,current_stress)
+        # screen,space = plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists,current_stress)
         stress_history.append(current_stress)
         if iteration > 2000:
             break

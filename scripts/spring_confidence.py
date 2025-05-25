@@ -16,10 +16,16 @@ plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']
 plt.rcParams['font.family'] = 'sans-serif'
 plt.rcParams['axes.unicode_minus'] = False
 # ==== 引入你現有的 spring.py 主要接口 ============
-import spring   # 請確定 spring.py 與本檔在同資料夾
+from library.metrics import *
+from library.config import *
+from library.data_io import *
+from library.geometry import *
+from library.visulization import *
+from library.physics import *
+from library.initialization import *
 
 # ==== 參數可自行調整 ============================
-N_BOOTSTRAP      = 50          # 重覆次數（>300 建議跑一夜）
+N_BOOTSTRAP      = 1000          # 重覆次數（>300 建議跑一夜）
 SPRING_JITTER    = 0.05         # 每次彈簧係數隨機 ±5 %
 REPULSE_JITTER   = 0.20         # 排斥力常數 ±20 %
 PLOT_FILE        = "confidence_ellipses.png"
@@ -35,19 +41,26 @@ def _run_once(seed:int,
 
     # 1. 初始化（重用 generate_CHEN_initial_positions）
     vertice, dni, data, pos_matrix, fixed_pos = \
-        spring.generate_CHEN_initial_positions([600, 500])
+        generate_CHEN_initial_positions([600, 500])
 
     # 2. 動態調整彈簧 & 排斥係數（透過 spring.py 中全域變數）
-    spring.SPRING_STIFFNESS_BASE = spring.SPRING_STIFFNESS_BASE * k_spring_scale
-    spring.REPULSION_STRENGTH_BASE = spring.REPULSION_STRENGTH_BASE * k_repulse_scale
+    global SPRING_STIFFNESS_BASE
+    global REPULSION_STRENGTH_BASE
+    
+    SPRING_STIFFNESS_BASE = SPRING_STIFFNESS_BASE * k_spring_scale
+    REPULSION_STRENGTH_BASE = REPULSION_STRENGTH_BASE * k_repulse_scale
 
     # 3. 跑核心物理模擬
-    dir_data = spring.uploading_directional_data()
-    _wrong, sh, final_pos = spring.main_physics_simulation(
+    dir_data = uploading_directional_data()
+    _wrong, sh, final_pos = main_physics_simulation(
         vertice, dni, data,
         deepcopy(pos_matrix),               # 傳入初始座標副本
         dir_data, fixed_pos
     )
+    
+    SPRING_STIFFNESS_BASE = SPRING_STIFFNESS_BASE / k_spring_scale
+    REPULSION_STRENGTH_BASE = REPULSION_STRENGTH_BASE / k_repulse_scale
+    
     return np.asarray(final_pos), vertice
 
 # ---------- Bootstrap + 信賴區計算 ---------------
@@ -125,3 +138,6 @@ def bootstrap_and_plot():
     _plot_ellipses(mu, covs, vertice)
     # 回傳平均座標供後續使用
     return mu, covs, vertice
+
+if __name__ == "__main__":
+    bootstrap_and_plot()
