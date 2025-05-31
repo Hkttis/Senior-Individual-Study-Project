@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from tqdm import trange
 from copy import deepcopy
+from scipy.stats import chi2
 
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']
 plt.rcParams['font.family'] = 'sans-serif'
@@ -25,7 +26,7 @@ from library.physics import *
 from library.initialization import *
 
 # ==== 參數可自行調整 ============================
-N_BOOTSTRAP      = 1000          # 重覆次數（>300 建議跑一夜）
+N_BOOTSTRAP      = 30          # 重覆次數（>300 建議跑一夜）
 SPRING_JITTER    = 0.05         # 每次彈簧係數隨機 ±5 %
 REPULSE_JITTER   = 0.20         # 排斥力常數 ±20 %
 PLOT_FILE        = "confidence_ellipses.png"
@@ -132,9 +133,12 @@ def _plot_ellipses(mu, covs, vertice):
     print(f"==> Figure saved as {PLOT_FILE}")
     plt.close()
 
+
+
 # ---------- 對外介面 ------------------------------
 def bootstrap_and_plot():
     mu, covs, vertice = _bootstrap_dynamics()
+    
     _plot_ellipses(mu, covs, vertice)
     # 回傳平均座標供後續使用
     return mu, covs, vertice
