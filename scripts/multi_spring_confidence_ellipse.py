@@ -20,7 +20,7 @@ from library.physics import *
 from library.initialization import *
 
 # ==== 參數可自行調整 ============================
-N_BOOTSTRAP          = 4      # 重覆次數（>300 建議跑一夜）
+N_BOOTSTRAP          = 20      # 重覆次數（>300 建議跑一夜）
 SPRING_JITTER        = 0.05    # 每次彈簧係數隨機 ±5 %
 REPULSE_JITTER       = 0.20    # 排斥力常數 ±20 %
 ELLIPSES_FILE        = "multi_confidence_ellipses.png"
@@ -137,18 +137,18 @@ def _plot_kde_combined(samples, vertice):
     if dim != 2:
         raise ValueError("samples 的第三維度必須為 2 (x, y)")
 
-    # 2. 將所有點攤平成 (B * N_nodes, 2) 以取得全域邊界
-    all_pts = samples.reshape(-1, 2)
-    xmin_global, ymin_global = all_pts.min(axis=0) - 0.1
-    xmax_global, ymax_global = all_pts.max(axis=0) + 0.1
+    # 2. 先把 Pygame 的 y 座標翻轉成左下為原點
+    #    由於 Pygame 座標 y=0 在上方，y=750 在下方：
+    #    新的 y_new = 750 - y_old
+    #    下面直接對整個 samples 做翻轉
+    samples_flipped = samples.copy()  # 避免改到原陣列
+    samples_flipped[:, :, 1] = 750.0 - samples_flipped[:, :, 1]
 
-    # 3. 建立大範圍網格 (200×200)，供所有節點共用
-    #    這是為了讓每個節點都在同一個坐標系上繪製，方便比較、避免各自縮放
-    xx_global, yy_global = np.mgrid[
-        xmin_global:xmax_global:200j,
-        ymin_global:ymax_global:200j
-    ]
-    grid_coords_global = np.vstack([xx_global.ravel(), yy_global.ravel()])  # shape = (2, 200*200)
+    # 3. 建立全螢幕網格 (200×200)，範圍從 x=0→1200, y=0→750
+    xmin, xmax = 0.0, 1200.0
+    ymin, ymax = 0.0, 750.0
+    xx, yy = np.mgrid[xmin:xmax:200j, ymin:ymax:200j]  # xx.shape = (200,200), yy.shape = (200,200)
+    grid_coords = np.vstack([xx.ravel(), yy.ravel()])  # shape = (2, 200*200)
 
     # 4. 準備一組可循環的序列調色盤名稱，避免顏色重覆太快
     seq_cmaps = ['Reds', 'Greens', 'Blues', 'Oranges', 'Purples', 'Greys']
@@ -161,7 +161,7 @@ def _plot_kde_combined(samples, vertice):
     # 6. 依序處理每個節點
     for idx, name in enumerate(vertice):
         # 6.1 取出該節點的所有 B 個 bootstrap 样本 (shape = (B, 2))
-        node_samples = samples[:, idx, :]
+        node_samples = samples_flipped[:, idx, :]
 
         # 6.2 如果該節點的樣本數量 < 2 或所有坐標完全相同 (無法做 KDE)，就
         #     只繪製平均位置的 marker 與 label，並跳過 KDE 下的散點密度
@@ -198,71 +198,65 @@ def _plot_kde_combined(samples, vertice):
             ax.text(mean_xy[0] + 0.5, mean_xy[1] + 0.5, name,
                     color='r', fontsize=8, fontweight='bold', zorder=4)
             continue
+        
+        # ====== 改為：先在「node_samples 上」計算每個點的 KDE 密度值，然後用 scatter 著色 ======
+        # 6.4.1 先針對該節點的所有 bootstrap 點，算出它們各自的密度 d_i
+        # node_samples.shape = (B,2)，我們把它的 (x,y) 堆成 (2,B) 傳給 kde
+        densities = kde(node_samples.T)    # 回傳 shape=(B,) 的每個點的 f(x_i,y_i)
 
+        # 6.4.2 選擇該節點的 colormap 與底色、marker 顏色
+        cmap_obj    = plt.get_cmap(seq_cmaps[idx % len(seq_cmaps)])
+        marker_color = cmap_obj(0.9)   # 之後用來畫平均點、文字
+
+        # 6.4.3 用 scatter，colors= densities，並搭配 colormap 自動映射顏色
+        #         這裡 c=densities 讓顏色深淺依照 KDE 高度變化
+        ax.scatter(
+            node_samples[:, 0], node_samples[:, 1],
+            c=densities,               # 以密度值決定顏色
+            cmap=seq_cmaps[idx % len(seq_cmaps)], # 或 cmap_obj，直接用此節點的 colormap
+            s=3,                       # 半徑調小：原本是 8，改成 4 讓點更細
+            alpha=0.8,                 # 可以自行調整透明度(反正顏色本身就會深淺)
+            zorder=2
+        )
+        
+        '''
         # 6.4 建立該節點專屬的網格範圍 (限制在 global 範圍內，避免出界)
-        #     但若 (max-min) 太小，也要擴充到最小範圍 min_span
-        node_min = node_samples.min(axis=0)
-        node_max = node_samples.max(axis=0)
-        span = node_max - node_min
-        min_span = 0.2  # 至少為 0.2 單位，避免網格過窄
-        # 計算本節點網格邊界 (局部範圍)
-        xmin_loc = node_min[0] - 0.1
-        xmax_loc = node_max[0] + 0.1
-        ymin_loc = node_min[1] - 0.1
-        ymax_loc = node_max[1] + 0.1
-        # 確保最小差距不低於 min_span
-        if (xmax_loc - xmin_loc) < min_span:
-            center_x = (xmax_loc + xmin_loc) / 2
-            xmin_loc = center_x - min_span / 2
-            xmax_loc = center_x + min_span / 2
-        if (ymax_loc - ymin_loc) < min_span:
-            center_y = (ymax_loc + ymin_loc) / 2
-            ymin_loc = center_y - min_span / 2
-            ymax_loc = center_y + min_span / 2
+        # 【改為使用全螢幕固定網格 xx, yy, grid_coords 來計算 KDE】
+        zz = kde(grid_coords).reshape(xx.shape)             # 全局 200×200 網格上算密度
+        zz_masked = np.ma.masked_where(zz <= 0, zz)         # 掩掉 <= 0 的值，只留正密度
 
-        # 6.5 在本地範圍上生成一個 200×200 的細網格，用於計算 KDE
-        xx_loc, yy_loc = np.mgrid[
-            xmin_loc:xmax_loc:200j,
-            ymin_loc:ymax_loc:200j
-        ]
-        grid_coords_loc = np.vstack([xx_loc.ravel(), yy_loc.ravel()])  # (2, 40000)
-
-        # 6.6 在此網格上評估 KDE，得到密度矩陣 zz_loc (200×200)
-        zz_loc = kde(grid_coords_loc).reshape(xx_loc.shape)
-
-        # 6.7 對非正值做遮罩 (masked)，確保 contourf 只畫正密度
-        zz_masked = np.ma.masked_where(zz_loc <= 0, zz_loc)
-
-        # 6.8 為該節點選擇顏色：cycle 取不同 colormap
+        # 6.5 為該節點選擇顏色：cycle 取不同 colormap
         cmap_obj = plt.get_cmap(seq_cmaps[idx % len(seq_cmaps)])
         fill_color   = cmap_obj(0.6)  # 半透明填充
         marker_color = cmap_obj(0.9)  # 深色，用於散點與平均點
 
-        # 6.9 在 Axes 上繪製等高面 (contourf)
+        # 6.6 在 Axes 上繪製等高面 (contourf)
         ax.contourf(
-            xx_loc, yy_loc, zz_masked,
+            xx, yy, zz_masked,
             levels=5,                 # 分成 5 個等級
-            colors=[fill_color],      # 全部用同一個顏色
+            colors=["none"],      # 全部用同一個顏色
             alpha=0.4,                # 半透明
             zorder=1                  # 底層
         )
 
-        # 6.10 在同一 Axes 上繪製該節點的原始 bootstrap 散點
+        # 6.7 在同一 Axes 上繪製該節點的原始 bootstrap 散點
         ax.scatter(
             node_samples[:, 0], node_samples[:, 1],
             s=8, color=marker_color,
             alpha=0.6, zorder=2
         )
-
-        # 6.11 繪製該節點的平均位置 (紅叉號改成 marker_color + 'x')
+        '''
         mean_xy = node_samples.mean(axis=0)
+        '''
+        # 6.8 繪製該節點的平均位置 (紅叉號改成 marker_color + 'x')
         ax.plot(
             mean_xy[0], mean_xy[1],
             marker='x', color=marker_color,
-            ms=6, mew=1.5, zorder=3
+            ms=4, mew=1.5, zorder=3
         )
-
-        # 6.12 在平均點旁邊加文字標籤 (節點名稱)
+        '''
+        
+        # 6.9 在平均點旁邊加文字標籤 (節點名稱)
         ax.text(
             mean_xy[0] + 0.5, mean_xy[1] + 0.5,
             name,
@@ -271,8 +265,8 @@ def _plot_kde_combined(samples, vertice):
         )
 
     # 7. 設定整張圖的 x, y 範圍為所有節點的 globalBound
-    ax.set_xlim(xmin_global, xmax_global)
-    ax.set_ylim(ymin_global, ymax_global)
+    ax.set_xlim(0, 1200)
+    ax.set_ylim(0, 750)
     ax.set_aspect('equal')  # 等比例，讓密度圖與散點不失真
 
     # 8. 圖片標題與排版
