@@ -7,7 +7,7 @@ from library.config import *
 from library.visulization import *
 from library.metrics import *
 
-def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list) : # Main PS function
+def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,spring_stiffness,repulsion_strength,directional_force_magnitude) : # Main PS function
     '''initialize constants for main PS'''
     n = len(vertice)
     
@@ -20,9 +20,11 @@ def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_p
     resistance = RESISTANCE_BASE
     
     # IMPORTANT CONSTANTS
+    '''
     spring_stiffness   = SPRING_STIFFNESS_BASE
     repulsion_strength = REPULSION_STRENGTH_BASE
     directional_force_magnitude = DIRECTIONAL_FORCE_MAGNITUDE_BASE
+    '''
     
     '''set up PS'''
     pygame.init()
