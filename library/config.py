@@ -1,4 +1,5 @@
 # for CONFIGs
+import os
 
 # using dictionary to modularize file paths
 FILE_PATHS = {
@@ -7,7 +8,8 @@ FILE_PATHS = {
     "classification_data": "C:/Users/justi/Desktop/project/csv doc utf8/國家分類.csv",
     "output_csv": "cities_pos_try3.csv",
     "font_path": "C:/Windows/Fonts/msyh.ttc",
-    "ground_truth_path" : "C:/Users/justi/Desktop/project/csv doc utf8/西漢古城地理位置資訊.csv"
+    "ground_truth_path" : "C:/Users/justi/Desktop/project/csv doc utf8/西漢古城地理位置資訊.csv",
+    "visualization_data": "C:/Usersjusti/Desktop/project/results/visualization_data.json"
 }
 
 # default force parameters (for bootstrap & normal runs)

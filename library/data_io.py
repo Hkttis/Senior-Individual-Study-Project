@@ -55,3 +55,9 @@ def turnto_csv(vertice,pos_matrix) :
     with open(FILE_PATHS["output_csv"], mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         writer.writerows(data)
+        
+'''
+Given the file path : "C:/Usersjusti/Desktop/project/results/visualization_data.json"
+
+I want to make a function save_visualization_data(
+'''
