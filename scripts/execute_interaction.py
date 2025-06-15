@@ -4,7 +4,7 @@ from folium import FeatureGroup, LayerControl
 from folium.features import GeoJsonTooltip
 
 # ---- 你現有的計算結果 -------------------
-from library.data_io import load_visualization_data
+#from library.data_io import load_visualization_data
 
 # ---- 子模組 -----------------------------
 from library.interaction import *
@@ -26,7 +26,7 @@ def _node_color(cluster_id):
 
 def build_interactive_map():
     # 0) 讀入前處理後的可視化數據 ------------------
-    data = load_visualization_data()
+    #data = load_visualization_data()
     #   data["nodes"] : list of {name, lat, lon, cluster}
     #   data["edges"] : list of {start_lat, start_lon, end_lat, end_lon, err_val}
 
@@ -41,7 +41,7 @@ def build_interactive_map():
                    zoom_start=ZOOM_START,
                    hist_img_path=HIST_MAP_PATH,
                    hist_img_bounds=HIST_MAP_BOUNDS)
-
+    '''
     # 2) 節點圖層 --------------------------------
     fg_nodes = FeatureGroup(name="Country Nodes", show=True)
 
@@ -68,7 +68,8 @@ def build_interactive_map():
             tooltip=f"err={e['err_val']*100:.1f} %"
         ).add_to(fg_edges)
     fg_edges.add_to(m)
-
+    '''
+    
     # 4) 把你的 PNG 匯出圖自動掛成「可切換」圖層 -----
     img_layers = png_layers_from_directory(
         RESULT_DIR,

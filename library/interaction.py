@@ -7,7 +7,7 @@ from folium.features import GeoJsonTooltip
 from folium.raster_layers import ImageOverlay
 
 # ---- 你現有的計算結果 -------------------
-from library.data_io import load_visualization_data
+#from library.data_io import load_visualization_data
 # ↑==> 請在 data_io.py 自行加一個函式，把 pos_matrix、edges、errors
 #       dump 成 json / pickle，再用這裡的 loader 讀回。
 
@@ -56,7 +56,7 @@ def png_layers_from_directory(directory, *, bounds, transparent=False):
     directory : str
         Folder containing exported figures (e.g. stress_convergence_log.png ...).
     bounds : tuple
-        Same as tiles.py –  ((south, west), (north, east)).
+        Same as tiles.py ((south, west), (north, east)).
     transparent : bool
         If your PNG already has alpha channel set, keep it True.
     """

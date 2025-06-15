@@ -3,7 +3,7 @@ from library.bootstrap_and_visualization import *
 
 def bootstrap_and_plot():
     # Parameters
-    N_BOOTSTRAP          = 4      # 重覆次數（>300 建議跑一夜）
+    N_BOOTSTRAP          = 140      # 重覆次數（>300 建議跑一夜）
     SPRING_JITTER        = 0.05    # 每次彈簧係數隨機 ±5 %
     REPULSE_JITTER       = 0.20    # 排斥力常數 ±20 %
     
