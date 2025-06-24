@@ -1,7 +1,6 @@
 import pygame
 import math
 import os
-import csv
 from math import *
 import numpy as np
 
@@ -9,19 +8,8 @@ from library.config import *
 from library.metrics import calculate_kruskals_stress,stress_function
 from library.geometry import lcc_transformation
 from library.data_io import read_CHEN_csvfile,uploading_ground_truth
-from library.geometry import inverse_lcc_transformation
 
-def save_vis_data(vertice, dni, pos_matrix, ground_truth_positions, refer_pos):
-    pos_matrix_km = []
-    for pos in pos_matrix :
-        pos_matrix_km.append(((pos[0]-refer_pos[0])*4.15,(pos[1]-refer_pos[1])*4.15))
-    wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km,ground_truth_positions[dni["鄯善"]])
-    vis_data = []
-    for i,label in enumerate(vertice) :
-        vis_data.append( (label, wgs_pos_matrix[i][0], wgs_pos_matrix[i][1]) )
-    with open(FILE_PATHS["save_vis_data"], mode='w', newline='', encoding='utf-8-sig') as file:
-        writer = csv.writer(file)
-        writer.writerows(vis_data)
+
 
 def plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists,current_stress):
     # refresh the screen

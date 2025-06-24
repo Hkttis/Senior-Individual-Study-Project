@@ -71,5 +71,3 @@ def png_layers_from_directory(directory, *, bounds, transparent=False):
             interactive=False)
         layer_list.append(layer)
     return layer_list
-
-

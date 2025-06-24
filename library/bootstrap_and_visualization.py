@@ -45,23 +45,23 @@ def _run_once(seed: int,
     dir_data = uploading_directional_data()
     _wrong, sh, final_pos = main_physics_simulation(
         vertice, dni, data, deepcopy(pos_matrix), dir_data, fixed_pos, spring_stiffness, repulsion_strength, directional_force_magnitude)
-    return np.asarray(final_pos), vertice
+    return np.asarray(final_pos), vertice, dni
 
 #------------------bootstrap_dynamics-----------------------
 def bootstrap_dynamics(N_BOOTSTRAP,SPRING_JITTER,REPULSE_JITTER):
     """
     執行多次模擬，返回所有樣本、平均與協方差矩陣。
     """
-    first_pos, vertice = _run_once(0, 1.0, 1.0)
+    first_pos, vertice, dni = _run_once(0, 1.0, 1.0)
     N_nodes = first_pos.shape[0]
     samples = np.zeros((N_BOOTSTRAP, N_nodes, 2))
     samples[0] = first_pos
     for b in trange(1, N_BOOTSTRAP, desc="Bootstrap"):
         ks = np.random.normal(1.0, SPRING_JITTER/2) # mean = 1, std = spring_jilter/2
         kr = np.random.normal(1.0, REPULSE_JITTER/2 )
-        pos, _ = _run_once(b, ks, kr)
+        pos, _, _ = _run_once(b, ks, kr)
         samples[b] = pos
-    return samples, vertice
+    return samples, vertice, dni
 
 # ---------- draw ellipses for assigned vertice ----------------------
 def _draw_multi_confidence_ellipses(ax, samples, facecolor='steelblue'):

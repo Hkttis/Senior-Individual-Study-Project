@@ -10,7 +10,8 @@ FILE_PATHS = {
     "font_path": "C:/Windows/Fonts/msyh.ttc",
     "ground_truth_path" : "C:/Users/justi/Desktop/project/csv doc utf8/西漢古城地理位置資訊.csv",
     "visualization_data": "C:/Users/justi/Desktop/project/results/visualization_data.json",
-    "save_vis_data" : "C:/Users/justi/Desktop/project/results_data/vis_data.csv"
+    "save_vis_data" : "C:/Users/justi/Desktop/project/results_data/vis_data.csv",
+    "save_bootstrap_data": "C:/Users/justi/Desktop/project/results_data/bootstrap_data.csv"
 }
 
 # default force parameters (for bootstrap & normal runs)

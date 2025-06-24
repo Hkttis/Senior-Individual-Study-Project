@@ -8,6 +8,7 @@ from folium.features import GeoJsonTooltip
 
 # ---- 子模組 -----------------------------
 from library.interaction import *
+from library.data_io import *
 
 # === 使用者可自行修改 =====================
 CENTER_LAT = 41.0    # roughly in Tarim Basin
@@ -25,11 +26,15 @@ def _node_color(cluster_id):
     return palette[cluster_id % len(palette)]
 
 def build_interactive_map():
+    
     # 0) 讀入前處理後的可視化數據 ------------------
-    #data = load_visualization_data()
-    #   data["nodes"] : list of {name, lat, lon, cluster}
-    #   data["edges"] : list of {start_lat, start_lon, end_lat, end_lon, err_val}
-
+    data = loading_vis_data()
+    visdata_vertice = []
+    visdata_dni = {}
+    for i,n in enumerate(data["nodes"]):
+        visdata_vertice.append(n["name"])
+        visdata_dni[n["name"]] = i
+    
     # 1) 基底地圖 -------------------------------
     m = folium.Map(location=[CENTER_LAT, CENTER_LON],
                    zoom_start=ZOOM_START,
@@ -41,7 +46,7 @@ def build_interactive_map():
                    zoom_start=ZOOM_START,
                    hist_img_path=HIST_MAP_PATH,
                    hist_img_bounds=HIST_MAP_BOUNDS)
-    '''
+    
     # 2) 節點圖層 --------------------------------
     fg_nodes = FeatureGroup(name="Country Nodes", show=True)
 
@@ -55,7 +60,37 @@ def build_interactive_map():
             tooltip=n["name"]  # hover 顯示國名
         ).add_to(fg_nodes)
     fg_nodes.add_to(m)
+    
+    # 2.1) bootstrap 節點圖層 --------------------------------
+    bootstrap_data = loading_bootstrap_data(len(data["nodes"]))  # Load bootstrap data for interactive visualization
+    fg_nodes = FeatureGroup(name="bootstrap Nodes", show=True)
 
+    for n in bootstrap_data["nodes"]:
+        folium.CircleMarker(
+            location=[n["lat"], n["lon"]],
+            radius=2,
+            color=_node_color(n["cluster"]),
+            fill=True,
+            fill_opacity=0.5,
+        ).add_to(fg_nodes)
+    fg_nodes.add_to(m)
+    
+    # 2.5) ground truth 點圖層 --------------------------------
+    gt_data = gt_data_dict(visdata_vertice, visdata_dni)
+    fg_nodes = FeatureGroup(name="Ground Truth Positions", show=True)
+
+    for n in gt_data:
+        folium.CircleMarker(
+            location=[n["lat"], n["lon"]],
+            radius=5,
+            color=_node_color(n["cluster"]),
+            fill=True,
+            fill_opacity=0.9,
+            tooltip=n["name"]  # hover 顯示國名
+        ).add_to(fg_nodes)
+    fg_nodes.add_to(m)
+    
+    '''
     # 3) 邊與誤差標註 (Edge layer) -----------------
     fg_edges = FeatureGroup(name="Distance Errors", show=False)
     for e in data["edges"]:
