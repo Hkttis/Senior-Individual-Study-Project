@@ -9,7 +9,8 @@ FILE_PATHS = {
     "output_csv": "cities_pos_try3.csv",
     "font_path": "C:/Windows/Fonts/msyh.ttc",
     "ground_truth_path" : "C:/Users/justi/Desktop/project/csv doc utf8/西漢古城地理位置資訊.csv",
-    "visualization_data": "C:/Usersjusti/Desktop/project/results/visualization_data.json"
+    "visualization_data": "C:/Users/justi/Desktop/project/results/visualization_data.json",
+    "save_vis_data" : "C:/Users/justi/Desktop/project/results_data/vis_data.csv"
 }
 
 # default force parameters (for bootstrap & normal runs)

@@ -5,6 +5,7 @@ from library.data_io import *
 
 def generate_CHEN_initial_positions (refer_pos): # Initialize position of points from CHEN_STRESSMAJORIZATION/random positions
     data = read_CHEN_csvfile()
+    # The order of countries in vertice will be different in each time
     graph,vertice,dni,edges= construct_Chen_graph(data)
     n = len(vertice)
     # initialize random positions in pos_matrix

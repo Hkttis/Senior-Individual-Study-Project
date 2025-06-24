@@ -14,15 +14,7 @@ def read_CHEN_csvfile() :
         data_tmp.pop(0) # remove column name
         data = data + data_tmp
     return data
-def classify_nodes():
-    dt = FILE_PATHS["classification_data"]
-    groupdni = {}
-    with open( dt , newline='', encoding='utf-8' ) as csvfile :
-        rows = csv.reader(csvfile)
-        for row in rows :
-            groupdni[row[0]] = int(row[1])
-        groupdni['都護治/烏壘']=1
-    return groupdni
+
 def uploading_directional_data():
     csv_file_path = FILE_PATHS["directional_data"]
     directional_data= []
@@ -55,6 +47,19 @@ def turnto_csv(vertice,pos_matrix) :
     with open(FILE_PATHS["output_csv"], mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         writer.writerows(data)
+
+'''
+def classify_nodes():
+    dt = FILE_PATHS["classification_data"]
+    groupdni = {}
+    with open( dt , newline='', encoding='utf-8' ) as csvfile :
+        rows = csv.reader(csvfile)
+        for row in rows :
+            groupdni[row[0]] = int(row[1])
+        groupdni['都護治/烏壘']=1
+    return groupdni
+'''
+
         
 '''
 Given the file path : "C:/Usersjusti/Desktop/project/results/visualization_data.json"

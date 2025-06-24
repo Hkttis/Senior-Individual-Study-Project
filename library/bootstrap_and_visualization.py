@@ -34,6 +34,7 @@ def _run_once(seed: int,
     np.random.seed(seed)
     vertice, dni, data, pos_matrix, fixed_pos = \
         generate_CHEN_initial_positions([600, 500])
+    
     global SPRING_STIFFNESS_BASE, REPULSION_STRENGTH_BASE, DIRECTIONAL_FORCE_MAGNITUDE_BASE
     spring_stiffness = SPRING_STIFFNESS_BASE
     repulsion_strength = REPULSION_STRENGTH_BASE

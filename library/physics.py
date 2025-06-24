@@ -8,6 +8,7 @@ from library.visulization import *
 from library.metrics import *
 
 def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,spring_stiffness,repulsion_strength,directional_force_magnitude) : # Main PS function
+    
     '''initialize constants for main PS'''
     n = len(vertice)
     
@@ -18,13 +19,6 @@ def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_p
     spring_damping = SPRING_DAMPING_BASE
     min_distance = MIN_DISTANCE_BASE
     resistance = RESISTANCE_BASE
-    
-    # IMPORTANT CONSTANTS
-    '''
-    spring_stiffness   = SPRING_STIFFNESS_BASE
-    repulsion_strength = REPULSION_STRENGTH_BASE
-    directional_force_magnitude = DIRECTIONAL_FORCE_MAGNITUDE_BASE
-    '''
     
     '''set up PS'''
     pygame.init()
@@ -156,16 +150,17 @@ def apply_forces(min_distance,repulsion_strength,resistance,directional_force_ma
         node.apply_force_at_world_point((fx, fy), node.position)
     return nodes,cnt,wrong_direction_lists
 
+'''
 def pre_physics_simulation(pos_matrix,dni) : # Initialize the precise positions of three fixed points through prePS
     
-    '''set up simulation'''
+    # set up simulation
     pygame.init()
     prescreen = pygame.display.set_mode((1200, 750))
     prespace = pymunk.Space()
     pre_draw_options = pymunk.pygame_util.DrawOptions(prescreen)
     font = pygame.font.SysFont("Microsoft YaHei", 20)
     
-    '''set up body and springs in PS'''
+    # set up body and springs in PS
     preset = ["鄯善","都護治/烏壘",'車師後']
     prebody = []
     for i in range(3) :
@@ -187,7 +182,7 @@ def pre_physics_simulation(pos_matrix,dni) : # Initialize the precise positions 
     prespace.add(spring2)
     prespace.add(spring3)
     
-    '''Running (displaying) the simulation and updating the pos of three fixed points'''
+    # Running (displaying) the simulation and updating the pos of three fixed points
     clock = pygame.time.Clock()
     running = True
     while running:
@@ -210,3 +205,5 @@ def pre_physics_simulation(pos_matrix,dni) : # Initialize the precise positions 
         index = dni[preset[i]]
         pos_matrix[index] = pos
     return pos_matrix
+
+'''

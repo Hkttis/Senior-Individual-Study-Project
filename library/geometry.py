@@ -46,9 +46,48 @@ def lcc_transformation(dni, ground_truth_positions):
             lcc_xy_km.append(((x-align_pos[0])/1000 , -(y-align_pos[1])/1000)) # we use (-y) since the coordinates in pygame is different
     return lcc_xy_km
 
+def inverse_lcc_transformation(lcc_xy_km, wgs_align_pos):
+    # Define projection parameters again (must be identical to the original)
+    lon_min, lon_max = 73.24516481, 92.74103523
+    lat_min, lat_max = 37.12265816, 44.2843368
+    lat1 = lat_min
+    lat2 = lat_max
+    lon0 = (lon_min + lon_max) / 2
 
+    # Rebuild CRS
+    crs_lcc = CRS.from_proj4(
+        f"+proj=lcc +lat_1={lat1} +lat_2={lat2} "
+        f"+lat_0={lat1} +lon_0={lon0} +x_0=0 +y_0=0 "
+        "+ellps=WGS84 +units=m"
+    )
+
+    # Create inverse transformer: LCC (projected meters) -> WGS84 (lon/lat)
+    transformer = Transformer.from_crs(crs_lcc, "EPSG:4326", always_xy=True)
+
+    # Get alignment reference point in LCC meters
+    # We recompute the same way as in the forward function
+    transformer_fwd = Transformer.from_crs("EPSG:4326", crs_lcc, always_xy=True)
+    align_pos = transformer_fwd.transform(wgs_align_pos[0],wgs_align_pos[1])
+
+    # Now back-project all points
+    recovered_latlon = []
+    for x_km, y_km in lcc_xy_km:
+        if x_km is None and y_km is None:
+            recovered_latlon.append((None, None))
+        else:
+            # Undo km to meter and reverse the alignment
+            x_m = x_km * 1000 + align_pos[0]
+            y_m = -y_km * 1000 + align_pos[1]  # Note the negative to invert pygame Y
+            lon, lat = transformer.transform(x_m, y_m)
+            recovered_latlon.append((lon, lat))
+    
+    return recovered_latlon
+
+
+
+'''
 # OLD functions
-def alignment_and_rotation(vertice,dni,data,pos_matrix,theta_real) : # 
+def alignment_and_rotation(vertice,dni,data,pos_matrix,theta_real) : 
     for pos in pos_matrix :
         pos[0]*= 10
         pos[1]*= 10
@@ -84,3 +123,4 @@ def projection(pos_matrix) :
         x, y = pos_matrix[i]
         pos_matrix[i] = list(calculate_new_coordinates(lat_ref, lon_ref, x, y,geod))
     return pos_matrix
+'''
