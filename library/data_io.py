@@ -1,5 +1,4 @@
 import csv
-import random
 from library.config import *
 from library.geometry import inverse_lcc_transformation
 
@@ -69,10 +68,25 @@ def save_bootstrap_data(vertice, dni, samples, ground_truth_positions, refer_pos
         writer = csv.writer(file)
         writer.writerows(bootstrap_data)
 
+def save_err_data(vertice, dni, pos_matrix, ground_truth_positions, refer_pos, errors, edge_labels):
+    pos_matrix_km = []
+    for pos in pos_matrix :
+        pos_matrix_km.append(((pos[0]-refer_pos[0])*4.15,(pos[1]-refer_pos[1])*4.15))
+    wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km,ground_truth_positions[dni["鄯善"]])
+    
+    err_data = []
+    for i, (error_rate, (l1, l2)) in enumerate(zip(errors, edge_labels)) :
+        err_data.append( (l1, wgs_pos_matrix[dni[l1]][0], wgs_pos_matrix[dni[l1]][1],
+                          l2, wgs_pos_matrix[dni[l2]][0], wgs_pos_matrix[dni[l2]][1], error_rate) )
+    with open(FILE_PATHS["save_err_data"], mode='w', newline='', encoding='utf-8-sig') as file:
+        writer = csv.writer(file)
+        writer.writerows(err_data)
+
+
+
 def loading_vis_data():
     # open saved vis_data
     # transform it into dictionary
-    data = {}
     lst = []
     with open(FILE_PATHS["save_vis_data"], newline='', encoding='utf-8') as csvfile:
         rows = csv.reader(csvfile)
@@ -83,12 +97,11 @@ def loading_vis_data():
             dict["lat"] = float(row[2])
             dict["cluster"] = 5 #random.randint(0, 5)  # Random cluster for visualization
             lst.append(dict)
-    data["nodes"] = lst
-    return data
+    return lst
+
 def loading_bootstrap_data(countries_N):
     # open saved bootstrap_data
     # transform it into dictionary
-    data = {}
     lst = []
     with open(FILE_PATHS["save_bootstrap_data"], newline='', encoding='utf-8') as csvfile:
         rows = csv.reader(csvfile)
@@ -99,8 +112,7 @@ def loading_bootstrap_data(countries_N):
             dict["lat"] = float(row[3])
             dict["cluster"] = (i%countries_N) % 6
             lst.append(dict)
-    data["nodes"] = lst
-    return data
+    return lst
 
 def gt_data_dict(vertice, dni):
     ground_truth_positions = uploading_ground_truth(vertice, dni)
@@ -110,10 +122,31 @@ def gt_data_dict(vertice, dni):
             "name": vertice[i],
             "lon": pos[0],
             "lat": pos[1],
-            "cluster": 2  # Random cluster for visualization
+            "cluster": 2  
         }
         gt_data.append(dict)
     return gt_data
+
+# e={start_lat, start_lon, end_lat, end_lon, err_val}
+def loading_err_data():
+    # open saved err_data
+    # transform it into dictionary
+    lst = []
+    with open(FILE_PATHS["save_err_data"], newline='', encoding='utf-8') as csvfile:
+        rows = csv.reader(csvfile)
+        for i, row in enumerate(rows) :
+            dict = {}
+            dict["start_name"] = row[0]
+            dict["start_lon"] = float(row[1])
+            dict["start_lat"] = float(row[2])
+            dict["end_name"] = row[3]
+            dict["end_lon"] = float(row[4])
+            dict["end_lat"] = float(row[5])
+            dict["err_val"] = float(row[6])
+            lst.append(dict)
+    return lst
+
+
 
 '''
 # data output

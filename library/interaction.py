@@ -34,7 +34,7 @@ def add_base_tiles(m, *, cntr_lat, cntr_lon, zoom_start,
         control=True,
         show=True,        # shown at start-up
         attr="© OSM contributors").add_to(m)
-
+    '''
     # (B) 自行掃描的「中國歷史地圖集」影像疊加
     ImageOverlay(
         name="西漢西域歷史底圖",
@@ -43,6 +43,8 @@ def add_base_tiles(m, *, cntr_lat, cntr_lon, zoom_start,
         opacity=0.55,     # 半透明
         interactive=False,  # 只當底圖用
         cross_origin=False).add_to(m)
+    '''
+    
 
     # LayerControl 會在 map_app.py 統一新增
     return m

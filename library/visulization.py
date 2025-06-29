@@ -118,7 +118,7 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
     pygame.init()
     screen = pygame.display.set_mode((width, height))
     font = pygame.font.SysFont("Microsoft YaHei", 20)
-    screen.fill((255, 255, 255))
+    screen.fill((255, 255, 255)) 
 
     # === Zoom / Position handling ===
     scale_factor = 1
@@ -241,6 +241,7 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
     screen.blit(font.render("3%", True, (0, 0, 0)), (width - 75, height - 50))
     screen.blit(font.render("Error", True, (0, 0, 0)), (width - 70, height - 170))
 
+    
     # === Save image to specific folder with name based on zoom_area ===
     save_dir = "C:/Users/justi/Desktop/project/results"
     os.makedirs(save_dir, exist_ok=True)
@@ -263,6 +264,9 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
             if event.type == pygame.QUIT:
                 running = False
     pygame.quit()
+    
+    return errors, edge_labels
+
 def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos, pos_matrix):
     """
     1. 將 pos_matrix 轉成 km , 並以 refer_pos (鄯善) 為 (0,0)
@@ -394,6 +398,7 @@ def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos,
             if e.type == pygame.QUIT:
                 running = False
     pygame.quit()
+
 def model_cmp(vertice,dni,pos_matrix) :
     refer_pos = [600,500]
     align_pos = pos_matrix[dni['鄯善']]
