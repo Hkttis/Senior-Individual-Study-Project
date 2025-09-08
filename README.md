@@ -59,6 +59,9 @@ The Grade 12 model significantly improves accuracy, both visually and quantitati
 - Stress convergence plot (log-scaled)
 - Directional error heatmap with zoom-in
 - Overlay comparison between reconstructed and historical map (LCC projected)
+- Bootstrap confidence ellipse
+- KDE density graph
+- Interactive online map
 
 ## Acknowledgements
 
