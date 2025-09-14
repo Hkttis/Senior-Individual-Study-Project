@@ -16,7 +16,7 @@ from library.metrics import *
 from library.config import *
 from library.data_io import *
 from library.geometry import *
-from library.visulization import *
+from library.visualization import *
 from library.physics import *
 from library.initialization import *
 
@@ -224,7 +224,6 @@ def plot_kde_combined(samples, vertice):
         last_scatter = sc  # 保留最後一個 scatter，供 colorbar 用
 
         # 6.5 繪製該節點的“5 段等高線”，線條細、顏色淡，與該城市同色
-        # —— 改回「原本自动 levels=5 的写法」 ——  
         zz = kde(grid_coords).reshape(xx.shape)
         zz_masked = np.ma.masked_where(zz <= 0, zz) 
         line_color = cmap_obj(0.6)

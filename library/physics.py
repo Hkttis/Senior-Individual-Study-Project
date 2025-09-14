@@ -4,7 +4,7 @@ import pymunk.pygame_util
 import numpy as np
 
 from library.config import *
-from library.visulization import *
+from physics_stimulate.library.visualization import *
 from library.metrics import *
 
 def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,spring_stiffness,repulsion_strength,directional_force_magnitude) : # Main PS function

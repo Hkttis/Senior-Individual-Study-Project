@@ -4,7 +4,7 @@ from library.metrics import *
 from library.config import *
 from library.data_io import *
 from library.geometry import *
-from library.visulization import *
+from library.visualization import *
 from library.physics import *
 from library.initialization import *
   
