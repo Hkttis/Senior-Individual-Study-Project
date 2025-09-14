@@ -1,5 +1,3 @@
-# for CONFIGs
-import os
 
 # using dictionary to modularize file paths
 FILE_PATHS = {
@@ -28,3 +26,5 @@ SPRING_DAMPING_BASE = 50
 MIN_DISTANCE_BASE = 0.1
 RESISTANCE_BASE = 10
 
+km2pix = 1/(10 * 0.415) # 1 Li = 0.415 km, 1 pixel = 10 Li 
+km2Li = 1/0.415 # 1 Li = 0.415 km

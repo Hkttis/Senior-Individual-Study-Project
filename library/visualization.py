@@ -3,11 +3,13 @@ import math
 import os
 from math import *
 import numpy as np
+from copy import deepcopy
 
 from library.config import *
 from library.metrics import calculate_kruskals_stress,stress_function
 from library.geometry import lcc_transformation
 from library.data_io import read_CHEN_csvfile,uploading_ground_truth
+from library.config import km2pix, km2Li
 
 
 
@@ -34,7 +36,7 @@ def plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertic
     pygame.display.flip() # Updates the entire screen with new frame data.
     return screen,space
 
-def plot_stress_convergence_log(stress_history):
+def plot_stress_convergence_log(stress_history, file_name):
     """
     Draw the stress convergence curve with log-scaled Y-axis using pygame.
     """
@@ -97,8 +99,8 @@ def plot_stress_convergence_log(stress_history):
     screen.blit(now_stress_text, (20, 10))  # 放在 (20,25) 位置
 
     # Show and save
+    save_path = f"C:/Users/justi/Desktop/project/results/{file_name}stress_convergence_log.png"
     pygame.display.update()
-    save_path = "C:/Users/justi/Desktop/project/results/stress_convergence_log.png"
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     pygame.image.save(screen, save_path)
 
@@ -111,7 +113,7 @@ def plot_stress_convergence_log(stress_history):
     pygame.quit()
 
 # temporary setting default wrong_direction_lists as empty list
-def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists = [], zoom_area = None):
+def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists = [], zoom_area =None , file_name = None):
     """
     Official version for visualizing node error maps with scaled error color,
     top-5 error labels, and a color legend. Suitable for publication or reports.
@@ -161,7 +163,7 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
             errors.append(error_rate)
             edges.append(((x1, y1), (x2, y2)))
             edge_labels.append((row[0], row[1]))
-            idl_edge_km.append(float(row[2])*0.415)
+            idl_edge_km.append(float(row[2]) / km2Li)
     # === lines with error_rate > 0.03 ===
     sorted_pairs = sorted(zip(errors, edge_labels, edges,idl_edge_km), key=lambda x: x[0], reverse=True)
     top_n = 0
@@ -250,9 +252,9 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
 
     if zoom_area:
         zoom_name = f"zoomed_{zoom_area[0]}_{zoom_area[1]}_{zoom_area[2]}_{zoom_area[3]}"
-        filename = f"error_map_{zoom_name}.png"
+        filename = f"{file_name}error_map_{zoom_name}.png"
     else:
-        filename = f"error_map_full.png"
+        filename = f"{file_name}error_map_full.png"
 
     save_path = os.path.join(save_dir, filename)
     pygame.image.save(screen, save_path)
@@ -269,7 +271,7 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
     
     return errors, edge_labels
 
-def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos, pos_matrix):
+def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos, pos_matrix, file_name):
     """
     1. 將 pos_matrix 轉成 km , 並以 refer_pos (鄯善) 為 (0,0)
     2. 用 lcc_transformation 取得 ground truth 的 km 座標
@@ -280,8 +282,8 @@ def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos,
     # 1. 模擬結果轉 km 並對齊
     sim_xy_km = []
     for x, y in pos_matrix:
-        x_km = (x - refer_pos[0]) * 10 * 0.415
-        y_km = (y - refer_pos[1]) * 10 * 0.415
+        x_km = (x - refer_pos[0]) / km2pix
+        y_km = (y - refer_pos[1]) / km2pix
         sim_xy_km.append((x_km, y_km))
 
     # 2. ground truth 投影
@@ -314,7 +316,7 @@ def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos,
 
     # 平移 + 縮放
     offset_x, offset_y = 700, 500
-    scale = 1.2 / (10 * 0.415)
+    scale = 1.2 * km2pix
 
     # 5. 畫底圖：Ground Truth（單一灰色）
     special = { dni['鄯善'], dni['都護治/烏壘'] }
@@ -383,13 +385,13 @@ def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos,
     rmse_surf = font.render(f"RMSE = {rmse:.3f} km", True, (0, 0, 0))
     screen.blit(rmse_surf, (width - rmse_surf.get_width() - 20, 30))
     
-    kruskal_stress = calculate_kruskals_stress(dni,pos_matrix,data)
+    kruskal_stress = calculate_kruskals_stress(dni,deepcopy(pos_matrix),data)
     kru_surf = font.render(f"kruskal's stress = {kruskal_stress:.4f}", True, (0, 0, 0))
     screen.blit(kru_surf, (width - kru_surf.get_width() - 20, 80))
 
     # 9. 更新畫面並存檔
     pygame.display.flip()
-    save_path = "C:/Users/justi/Desktop/project/results/Overlap.png"
+    save_path = f"C:/Users/justi/Desktop/project/results/{file_name}Overlap.png"
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     pygame.image.save(screen, save_path)
 
@@ -401,15 +403,3 @@ def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos,
                 running = False
     pygame.quit()
 
-def model_cmp(vertice,dni,pos_matrix) :
-    refer_pos = [600,500]
-    align_pos = pos_matrix[dni['鄯善']]
-    for pos in pos_matrix :
-        pos[0] = (pos[0]-align_pos[0])*0.412 + refer_pos[0]
-        pos[1] = (pos[1]-align_pos[1])*0.412 + refer_pos[1]
-    data = read_CHEN_csvfile()
-    wrong_direction_lists = []
-    visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists, zoom_area=None)
-    visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists, zoom_area=(500, 325, 800, 400))
-    ground_truth_positions = uploading_ground_truth(vertice,dni)
-    ground_truth_comparison(vertice,dni,data,ground_truth_positions,refer_pos,pos_matrix)

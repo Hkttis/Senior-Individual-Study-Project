@@ -1,6 +1,7 @@
 import numpy as np
 from math import *
 from pyproj import Geod, CRS, Transformer
+from library.config import km2pix, km2Li
 
 def shift(pos_matrix,scale,center_pos) : # Shift the average of points to the center_pos
     sumx = 0
@@ -91,9 +92,9 @@ def alignment_and_rotation(vertice,dni,data,pos_matrix,theta_real) :
     for pos in pos_matrix :
         pos[0]*= 10
         pos[1]*= 10
-    for pos in pos_matrix : # 里 = 415 公尺
-        pos[0] *= 415/1000
-        pos[1] *= 415/1000
+    for pos in pos_matrix :
+        pos[0] *= 1/km2Li
+        pos[1] *= 1/km2Li
     x,y = pos_matrix[dni["鄯善"]]
     for pos in pos_matrix :
         pos[0]-= x

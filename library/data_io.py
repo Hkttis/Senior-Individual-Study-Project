@@ -1,6 +1,7 @@
 import csv
 from library.config import *
 from library.geometry import inverse_lcc_transformation
+from library.config import km2pix, km2Li
 
 # data input
 def read_CHEN_csvfile() :
@@ -44,7 +45,7 @@ def uploading_ground_truth(vertice,dni) :
 def save_vis_data(vertice, dni, pos_matrix, ground_truth_positions, refer_pos):
     pos_matrix_km = []
     for pos in pos_matrix :
-        pos_matrix_km.append(((pos[0]-refer_pos[0])*4.15,(pos[1]-refer_pos[1])*4.15))
+        pos_matrix_km.append(((pos[0]-refer_pos[0]) / km2pix,(pos[1]-refer_pos[1]) / km2pix))
     wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km,ground_truth_positions[dni["鄯善"]])
     vis_data = []
     for i,label in enumerate(vertice) :
@@ -57,7 +58,7 @@ def save_bootstrap_data(vertice, dni, samples, ground_truth_positions, refer_pos
     pos_matrix_km = []
     for pos_matrix_sample in samples :
         for pos in pos_matrix_sample :
-            pos_matrix_km.append(((pos[0]-refer_pos[0])*4.15,(pos[1]-refer_pos[1])*4.15))
+            pos_matrix_km.append(((pos[0]-refer_pos[0]) / km2pix,(pos[1]-refer_pos[1]) / km2pix))
     wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km,ground_truth_positions[dni["鄯善"]])
     bootstrap_data = []
     countries_N = len(vertice)
@@ -71,7 +72,7 @@ def save_bootstrap_data(vertice, dni, samples, ground_truth_positions, refer_pos
 def save_err_data(vertice, dni, pos_matrix, ground_truth_positions, refer_pos, errors, edge_labels):
     pos_matrix_km = []
     for pos in pos_matrix :
-        pos_matrix_km.append(((pos[0]-refer_pos[0])*4.15,(pos[1]-refer_pos[1])*4.15))
+        pos_matrix_km.append(((pos[0]-refer_pos[0]) / km2pix,(pos[1]-refer_pos[1]) / km2pix))
     wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km,ground_truth_positions[dni["鄯善"]])
     
     err_data = []

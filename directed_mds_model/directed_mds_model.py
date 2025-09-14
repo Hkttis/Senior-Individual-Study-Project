@@ -1,9 +1,13 @@
 import math
 import numpy
 import builtins
+from copy import deepcopy
 from numpy import *
 from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import cg
+
+from library.config import km2pix, km2Li
+
 # TODO : like not change pos, or direction constraint is (pos1-pos2)
 # FIXME : array copy
 insq2 = 1/math.sqrt(2)
@@ -162,7 +166,7 @@ def compute_DW_DV(n,s,m,t,X,sel_data,graph,vertice,dni,edges,dis,fixed_points_fl
         DVdni[(x,y)] = i
         DVdni[(y,x)] = i
     return DW,DV
-def vectorized_stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis) :
+def vectorized_stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis) : # weigh in km**2
     stressw = 0
     stressv = 0
     ''' #TODO : check now_stress use previous DWDV or now DWDV 
@@ -183,28 +187,29 @@ def vectorized_stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,
     for i in range(s) :
         x = dni[edges[i][0]]
         y = dni[edges[i][1]]
-        stressw = stressw + weight[x][y]*((linalg.norm(X[x]-X[y])-dis[x][y])**2)
+        stressw = stressw + weight[x][y]*((linalg.norm(X[x]-X[y])-dis[x][y])**2) / (km2Li**2)
     for i in range(t) :
         x = dni[sel_data[i][0]]
         y = dni[sel_data[i][1]]
         v = X[y]-X[x]
         unitx = v/linalg.norm(v)
         unitdata = numpy.array(unit_direction_dict[sel_data[i][2]])
-        stressv = stressv + veight[x][y]*(( linalg.norm(v)*linalg.norm(unitx-unitdata) )**2)
+        stressv = stressv + veight[x][y]*(( linalg.norm(v)*linalg.norm(unitx-unitdata) )**2) / (km2Li**2)
         #stressv = stressv + veight[x][y]*((linalg.norm(v)*(numpy.dot(unitx,unitdata)-1))**2)
     print('stressw:',stressw,' stressv:',stressv)
     return stressw+stressv
 def iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_direct_flag,inipos,weight,LW,veight,LV,JW,JV) :
-    iniX = inipos.copy()
+    iniX = deepcopy(inipos)
     pre_DW,pre_DV = compute_DW_DV(n,s,m,t,iniX,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag)
     pre_stress = vectorized_stress(n,s,m,t,iniX,weight,veight,in_direct_flag,dni,edges,sel_data,dis)
     now_stress = 0
     Z = iniX
     epsilon = 1
-    stress_col = [pre_stress]
+    stress_history = [pre_stress]
+    pos_history = [deepcopy(iniX)]  # record the initial positions
     cnt = 0
     #while epsilon >= 0.0001 :
-    while cnt<=stop_iteration_times :
+    while cnt <= stop_iteration_times :
         left = LW+LV
         right = numpy.matmul(JW,pre_DW)+numpy.matmul(JV,pre_DV)
         
@@ -220,13 +225,14 @@ def iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_di
         pre_DV = now_DV
         # epsilon = (pre_stress-now_stress)/pre_stress
         epsilon = abs((pre_stress-now_stress)/pre_stress)
+        stress_history.append(now_stress)
         pre_stress = now_stress
-        stress_col.append(pre_stress)
         cnt = cnt + 1
         Z = X
+        pos_history.append(deepcopy(Z)) # record the current positions
     print(pre_stress)
     
-    return Z, stress_col
+    return Z, stress_history, pos_history
 def directed_MDS(c_data,data,graph,vertice,dni,edges) : # c_data is from data_process, which [0,2] contain directed data
     n = len(vertice) # the number of points             # data~edges are from Chen~_method
     s = len(edges) # the number of the points' edges
@@ -243,7 +249,8 @@ def directed_MDS(c_data,data,graph,vertice,dni,edges) : # c_data is from data_pr
         for row in ver :
             dis[dni[row[0]]][dni[row[1]]] = row[3]
             dis[dni[row[1]]][dni[row[0]]] = row[3]
-    anspos, stress_col = iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_direct_flag,inipos,weight,LW,veight,LV,JW,JV)
-    return anspos
+    anspos, stress_history, pos_history = iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_direct_flag,inipos,weight,LW,veight,LV,JW,JV)
+    
+    return anspos, stress_history, pos_history
     #return anspos,n,s,m,t,weight,veight,in_direct_flag,dni,edges,sel_data,dis
     # add sth return

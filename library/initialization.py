@@ -1,6 +1,7 @@
 import numpy as np
 from library.geometry import *
 from library.data_io import *
+from library.config import km2pix, km2Li
 
 
 def generate_CHEN_initial_positions (refer_pos): # Initialize position of points from CHEN_STRESSMAJORIZATION/random positions
@@ -50,7 +51,6 @@ def add_fixed_positions(dni, pos_matrix, refer_pos, ground_truth_positions):
     FIXPOINTS = ['都護治/烏壘']
     
     gt_xy_km = lcc_transformation(dni, ground_truth_positions)
-    km2pix = 1.0 / (10 * 0.415)
     fixed_positions_list = []
     
     # SHAN_SHAN   refer_pos 已是 pixel 座標，所以鄯善對齊保持不變
