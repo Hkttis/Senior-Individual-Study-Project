@@ -6,9 +6,8 @@ import numpy as np
 from copy import deepcopy
 
 from library.config import *
-from library.metrics import calculate_kruskals_stress,stress_function
+from library.metrics import calculate_kruskals_stress
 from library.geometry import lcc_transformation
-from library.data_io import read_CHEN_csvfile,uploading_ground_truth
 from library.config import km2pix, km2Li
 
 
@@ -112,8 +111,7 @@ def plot_stress_convergence_log(stress_history, file_name):
                 running = False
     pygame.quit()
 
-# temporary setting default wrong_direction_lists as empty list
-def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists = [], zoom_area =None , file_name = None):
+def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists, zoom_area =None , file_name = None):
     """
     Official version for visualizing node error maps with scaled error color,
     top-5 error labels, and a color legend. Suitable for publication or reports.
