@@ -7,14 +7,18 @@ from library.geometry import *
 from library.visualization import *
 from library.physics import *
 from library.initialization import *
+from MDS_model.plot_node_link_diagram  import *
+from MDS_model.data_pre_processing import *
+from MDS_model.stress_majorization_mds_model import *
   
 # temporarily stop the plotting_physics_simulation function in run_phy...
 
 def main_function(): # avoid global parameters
     refer_pos = [600,500]
     vertice,dni,data,pos_matrix,fixed_positions_list = generate_CHEN_initial_positions(deepcopy(refer_pos))
+    
     directional_data = uploading_directional_data()
-    wrong_direction_lists,stress_history,pos_matrix = main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,SPRING_STIFFNESS_BASE,REPULSION_STRENGTH_BASE,DIRECTIONAL_FORCE_MAGNITUDE_BASE)
+    wrong_direction_lists,stress_history,pos_matrix = main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,SPRING_STIFFNESS_BASE,REPULSION_STRENGTH_BASE,DIRECTIONAL_FORCE_MAGNITUDE_BASE, plot = True)
     
     # Visualuzation and Evaluation
     plot_stress_convergence_log(stress_history, file_name = "PhysicsSim_")

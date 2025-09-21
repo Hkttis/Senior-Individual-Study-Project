@@ -7,7 +7,7 @@ from library.config import *
 from library.visualization import *
 from library.metrics import *
 
-def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,spring_stiffness,repulsion_strength,directional_force_magnitude) : # Main PS function
+def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,spring_stiffness,repulsion_strength,directional_force_magnitude, plot = False) : # Main PS function
     
     '''initialize constants for main PS'''
     n = len(vertice)
@@ -28,7 +28,8 @@ def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_p
     font = pygame.font.SysFont("Microsoft YaHei", 12)
     nodes,space = create_nodes_and_springs(n,mass,radius,vrange,spring_stiffness,spring_damping,fixmass,space,data, dni,pos_matrix,fixed_positions_list)
     # groupdni = classify_nodes()
-    wrong_direction_lists,stress_history,pos_matrix = run_physics_simulation(min_distance,repulsion_strength,resistance,directional_force_magnitude,screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix)
+    wrong_direction_lists,stress_history,pos_history, pos_matrix = run_physics_simulation(min_distance,repulsion_strength,resistance,directional_force_magnitude,screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix, plot)
+        
     return wrong_direction_lists,stress_history,pos_matrix
 def create_nodes_and_springs(n,mass,radius,vrange,spring_stiffness,spring_damping,fixmass,space,data, dni,pos_matrix,fixed_positions_list) : #add nodes and springs into pymunk
     nodes = [pymunk.Body(mass,pymunk.moment_for_circle(mass, 0, radius)) for _ in range(n)]
@@ -57,11 +58,12 @@ def create_nodes_and_springs(n,mass,radius,vrange,spring_stiffness,spring_dampin
         springs.append(spring)
         space.add(spring)
     return nodes,space
-def run_physics_simulation(min_distance,repulsion_strength,resistance,directional_force_magnitude,screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix): # run physics_simulation
+def run_physics_simulation(min_distance,repulsion_strength,resistance,directional_force_magnitude,screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix,plot): # run physics_simulation
     clock = pygame.time.Clock() # control pygame time frame
     running = True # running flag
     iteration = 0
     stress_history = []
+    pos_history = []
     while running:
         iteration += 1
         # resistance += 0.001
@@ -74,12 +76,14 @@ def run_physics_simulation(min_distance,repulsion_strength,resistance,directiona
         for i,node in enumerate(nodes) :
             pos_matrix[i] = nodes[i].position
             # pos_matrix = shift(pos_matrix,1,[600,375]) # shift the points to the center to avoid digressing
+        pos_history.append(deepcopy(pos_matrix))
         current_stress = stress_function(data,dni,pos_matrix)
-        # screen,space = plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists,current_stress)
+        if plot :
+            screen,space = plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists,current_stress)
         stress_history.append(current_stress)
         if iteration > 2000:
             break
-    return wrong_direction_lists,stress_history,pos_matrix
+    return wrong_direction_lists,stress_history,pos_history, pos_matrix
 def apply_forces(min_distance,repulsion_strength,resistance,directional_force_magnitude,nodes,directional_data, dni):
     '''replusive force'''
     for i, node_a in enumerate(nodes):

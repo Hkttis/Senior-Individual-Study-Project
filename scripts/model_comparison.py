@@ -15,6 +15,7 @@ def run_directed_MDS():
     graph,vertice,dni,edges,data= Chen_csv_and_graph()
     pos_matrix, stress_history, pos_history = directed_MDS(c_data,data,graph,vertice,dni,edges)
     
+    
     plot_stress_convergence_log(stress_history, file_name = "DirectedMDS_")
     draw_node_link_pygame(pos_matrix, vertice, edges)
     animate_node_link_pygame( pos_history, vertice, edges)
@@ -23,7 +24,7 @@ def run_directed_MDS():
     # Turn Li to pixel units
     # directed_MDS should not apply procrustes analysis 
     pos_matrix = alignment_and_scaling(pos_matrix, vertice, dni, refer_pos=[600,375])
-    visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, file_name = "DirectedMDS_")
+    visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, zoom_area = (400, 300, 900, 500), file_name = "DirectedMDS_")
     ground_truth_comparison(vertice,dni,data, uploading_ground_truth(vertice,dni),[600,375], deepcopy(pos_matrix), file_name = "DirectedMDS_")
 
 def run_stress_majorization():
@@ -41,5 +42,5 @@ def run_stress_majorization():
     ground_truth_comparison(vertice,dni,data, uploading_ground_truth(vertice,dni),[600,375], deepcopy(pos_matrix), file_name = "StressMj_")
 
 if __name__ == "__main__" :
-    # run_directed_MDS()
-    run_stress_majorization()
+    run_directed_MDS()
+    # run_stress_majorization()

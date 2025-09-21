@@ -501,8 +501,7 @@ def scaling_and_procrustes_analysis(pos_matrix, vertice, dni, refer_pos) :
     # 3) Apply translation to all points
     aligned = [[x + dx, y + dy] for x, y in scaled]
     
-    # 3.5)
-    # Be aware of the y-axis direction is flipped in pygame
+    # 3.5) Be aware that the y-axis direction is flipped in pygame
     flip = flipping_y(aligned, height=750)
 
     # 4) Do Orthogonal Procrustes to best align with ground truth positions

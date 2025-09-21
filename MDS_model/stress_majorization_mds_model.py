@@ -9,7 +9,7 @@ from library.config import km2pix, km2Li
 
 def inix(n,d) :
     #   initialize ini_X by random ( or by arrange and reshape )
-    ini_X = 10000*np.random.rand(n,d)
+    ini_X = 1500*np.random.rand(n,d)
     return ini_X
 def random_distr(n,d,weight,dismatrix) :
     #   show the average of random stress
@@ -40,9 +40,7 @@ def non_weight_graph_distance_matrix(graph,dni) :
     dismatrix = np.zeros((n,n))
     for i in range(n) :
         for row in graph[i] :
-            dismatrix[i][dni[row[1]]] = row[3]
-    #   remind !! we use the shortest path to replace unknown distance 
-    # dismatrix = np.array(floyd_warshall(graph,dni))
+            dismatrix[i][dni[row[1]]] = int(row[3])
     return nwgraph,dismatrix
 def calculate_weight_LW_dm (nwgraph,dismatrix):
     n = len(nwgraph)
@@ -50,8 +48,10 @@ def calculate_weight_LW_dm (nwgraph,dismatrix):
     weight = np.zeros((n,n))
     for i in range(n) :
         for j in nwgraph[i] :
-            weight[i][j] = 1
-            weight[j][i] = 1
+            if dismatrix[i][j] == 0 :
+                print("warning : dismatrix_error")
+            weight[i][j] = 1/(dismatrix[i][j]*dismatrix[i][j])
+            weight[j][i] = 1/(dismatrix[i][j]*dismatrix[i][j])
     #   calculate LW
     LW = np.zeros((n,n))
     for i in range(n) :
@@ -102,7 +102,7 @@ def iterate(n,ini_X,weight,dismatrix,LW,graph,vertice,edges) :
     stress_history = [pre_stress]
     pos_history = [deepcopy(ini_X)]
     X = ini_X
-    while epsilon > 0.0001 and pre_stress > 10:
+    while epsilon > 0.001 and len(stress_history) < 500 :
         Z = deepcopy(X)
         LZ = calculate_LZ(n,weight,dismatrix,Z)
         X = equation_solver(LW,LZ,Z)
@@ -112,7 +112,7 @@ def iterate(n,ini_X,weight,dismatrix,LW,graph,vertice,edges) :
         stress_history.append(pre_stress)
         pos_history.append(deepcopy(X))
         if epsilon < 0 :
-            return X
+            return X, stress_history, pos_history
     return X, stress_history, pos_history
 def stress_majorization(graph,dni,vertice,edges) :
     n = len(graph)

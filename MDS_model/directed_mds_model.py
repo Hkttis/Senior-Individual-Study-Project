@@ -13,9 +13,9 @@ insq2 = 1/math.sqrt(2)
 unit_direction_dict = {'東':[1,0], '西':[-1,0], '北':[0,1], '南':[0,-1], 
               '東南':[insq2,-insq2], '西北':[-insq2,insq2], '東北':[insq2,insq2], '西南':[-insq2,-insq2]}
 # configuration
-fix_weight = 10000  # weight of fixed points is 10000, let it be fixed because it wanna fit the dij
+fix_weight = 1  # weight of fixed points is 10000, let it be fixed because it wanna fit the dij
 w_weight = 1
-v_weight = 0.01
+v_weight = 0.0001
 stop_iteration_times = 500
 
 
@@ -66,12 +66,24 @@ def revise_direction(sel_data) :
                 sel_data[i][2] = direction_dictionary[j]
                 break
     return sel_data
-def compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,in_dis_flag,in_direct_flag,fixed_points_flag) :
+def avg_dis(dis):
+    sum = 0
+    cnt = 0
+    for i in range(len(dis)) :
+        for num in dis[i] :
+            if num != 0 :
+                sum = sum + num
+                cnt = cnt + 1
+    return sum/cnt
+
+def compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,in_dis_flag,in_direct_flag,fixed_points_flag) :
     weight = [[0 for i in range(n)] for j in range(n)]
     for ver in graph :
         for row in ver :
-            weight[dni[row[0]]][dni[row[1]]] = w_weight
-            weight[dni[row[1]]][dni[row[0]]] = w_weight
+            if dis[dni[row[0]]][dni[row[1]]] == 0 :
+                print("Warning : distance_error")
+            weight[dni[row[0]]][dni[row[1]]] = w_weight / (dis[dni[row[0]]][dni[row[1]]]**2)
+            weight[dni[row[1]]][dni[row[0]]] = w_weight / (dis[dni[row[0]]][dni[row[1]]]**2)
             if fixed_points_flag[dni[row[0]]]==1 and fixed_points_flag[dni[row[1]]] ==1 :
                 weight[dni[row[0]]][dni[row[1]]] = fix_weight
                 weight[dni[row[1]]][dni[row[0]]] = fix_weight
@@ -90,8 +102,12 @@ def compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,i
     
     veight = [[0 for i in range(n)] for j in range(n)]
     for row in sel_data :
-        veight[dni[row[0]]][dni[row[1]]] = v_weight
-        veight[dni[row[1]]][dni[row[0]]] = v_weight
+        if dis[dni[row[0]]][dni[row[1]]] != 0 :
+            veight[dni[row[0]]][dni[row[1]]] = v_weight / (dis[dni[row[0]]][dni[row[1]]]**2)
+            veight[dni[row[1]]][dni[row[0]]] = v_weight / (dis[dni[row[0]]][dni[row[1]]]**2)
+        else :
+            veight[dni[row[0]]][dni[row[1]]] = v_weight / (avg_dis(dis)**2)
+            veight[dni[row[1]]][dni[row[0]]] = v_weight / (avg_dis(dis)**2)
     '''
     for i in range(n) : # level up the weight of the points connected to the fixed points
         if fixed_points_flag[i] ==1 :
@@ -113,16 +129,15 @@ def compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,i
             if LV[i][j] != LV[j][i] :
                 print('********************warning LV is not symmetric************************')
     
-    JW = [[0 for i in range(s)] for j in range(n)]
-    for i in range(len(edges)) :
-        x = dni[edges[i][0]]
-        y = dni[edges[i][1]]
-        if x > y : # pick smaller one as source node
-            JW[y][i] = weight[x][y]
-            JW[x][i] = (-1)*weight[x][y]
-        else :
-            JW[x][i] = weight[x][y]
-            JW[y][i] = (-1)*weight[x][y]
+    JW = [[0 for i in range(int(n*(n-1)/2))] for j in range(n)]
+    cnt = 0
+    for i in range(n) :
+        for j in range(i) : # j < i
+            if (vertice[i],vertice[j]) in edges or (vertice[j],vertice[i]) in edges :
+                JW[j][cnt] = weight[i][j]
+                JW[i][cnt] = (-1)*weight[i][j]
+            cnt += 1
+    
     JV = [[0 for i in range(t)] for j in range(n)]
     for i in range(len(sel_data)) :
         x = dni[sel_data[i][0]]
@@ -138,31 +153,30 @@ def compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,i
     array_JV = numpy.array(JV)
     return array_weight,array_LW,array_veight,array_LV,array_JW,array_JV
 def compute_DW_DV(n,s,m,t,X,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag) :
-    DW = numpy.zeros((s,2))
-    DWdni = {} 
-    for i in range(s) : # let the smaller be source node
-        x = builtins.max(dni[edges[i][0]],dni[edges[i][1]])
-        y = builtins.min(dni[edges[i][0]],dni[edges[i][1]])
-        v = X[x]-X[y]
-        if linalg.norm(v)==0 :
-            unit = numpy.zeros((1,2))
-        else : 
-            unit = v/linalg.norm(v)
-        DW[i] = dis[x][y]*deepcopy(unit)
-        DWdni[(x,y)] = i # list is not hashable, replace it by tuple ()
-        DWdni[(y,x)] = i
+    
+    DW = numpy.zeros((int(n*(n-1)/2),2))
+    cnt = 0
+    for i in range(n) :
+        for j in range(i) : # j < i
+            v = X[i]-X[j]
+            if linalg.norm(v)==0 :
+                unit = numpy.zeros((1,2))
+            else : 
+                unit = v/linalg.norm(v)
+            DW[cnt] = dis[i][j]*deepcopy(unit)
+            cnt += 1
     
     DV = numpy.zeros((t,2))
-    DVdni = {}
     for i in range(t) :
         x = dni[sel_data[i][0]]
         y = dni[sel_data[i][1]]
         v = X[y]-X[x]
         unit = numpy.array(unit_direction_dict[sel_data[i][2]])
-        #unit = numpy.array([-1,0])
-        DV[i] = deepcopy((linalg.norm(v)*unit))
-        DVdni[(x,y)] = i
-        DVdni[(y,x)] = i
+        if dis[x][y] !=0 :
+            DV[i] = deepcopy(dis[x][y]*unit)
+        else :
+            DV[i] = deepcopy((linalg.norm(v)*unit))
+    
     return DW,DV
 def stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis) : # weigh in km**2
     stressw = 0
@@ -185,8 +199,8 @@ def stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis) : # we
     for i in range(s) :
         x = dni[edges[i][0]]
         y = dni[edges[i][1]]
-        if weight[x][y] != fix_weight :
-            stressw = stressw + weight[x][y]*((linalg.norm(X[x]-X[y])-dis[x][y])**2) / (km2Li**2)
+        stressw = stressw + weight[x][y]*((linalg.norm(X[x]-X[y])-dis[x][y])**2) / (km2Li**2)
+    
     for i in range(t) :
         x = dni[sel_data[i][0]]
         y = dni[sel_data[i][1]]
@@ -221,7 +235,7 @@ def iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_di
         now_stress = stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis)
         pre_DW = now_DW
         pre_DV = now_DV
-        epsilon = abs((pre_stress-now_stress)/pre_stress)
+        epsilon = abs((pre_stress-now_stress)/(pre_stress))
         stress_history.append(now_stress)
         pre_stress = now_stress
         cnt = cnt + 1
@@ -236,14 +250,14 @@ def directed_MDS(c_data,data,graph,vertice,dni,edges) : # c_data is from data_pr
     sel_data,in_dis_flag,in_direct_flag, m = select_data(n,c_data[0]+c_data[2],data,dni)
     sel_data = revise_direction(sel_data)
     t = len(sel_data)
-    # n is number of all nodes, s is number of all distance edges
-    # m is number of nodes with directional edges (E'), t is the number of directional edges
-    weight,LW,veight,LV,JW,JV = compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,in_dis_flag,in_direct_flag,fixed_points_flag)
     dis =  numpy.zeros((n,n))
     for ver in graph :
         for row in ver :
-            dis[dni[row[0]]][dni[row[1]]] = row[3]
-            dis[dni[row[1]]][dni[row[0]]] = row[3]
+            dis[dni[row[0]]][dni[row[1]]] = int(row[3])
+            dis[dni[row[1]]][dni[row[0]]] = int(row[3])
+    # n is number of all nodes, s is number of all distance edges
+    # m is number of nodes with directional edges (E'), t is the number of directional edges
+    weight,LW,veight,LV,JW,JV = compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,in_dis_flag,in_direct_flag,fixed_points_flag)
     anspos, stress_history, pos_history = iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_direct_flag,inipos,weight,LW,veight,LV,JW,JV)
     
     return anspos, stress_history, pos_history

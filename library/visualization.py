@@ -6,11 +6,36 @@ import numpy as np
 from copy import deepcopy
 
 from library.config import *
-from library.metrics import calculate_kruskals_stress
+from library.metrics import calculate_kruskals_stress, stress_function
 from library.geometry import lcc_transformation
 from library.config import km2pix, km2Li
 
 
+def plotting_physics_simulation_animation(space, screen, draw_options,font, data, vertice, dni, pos_history):
+    clock = pygame.time.Clock() # control pygame time frame
+    stress_history = []
+    pos_history = []
+    for pos_matrix in pos_history :
+        for event in pygame.event.get(): # handle events like closing the window
+            if event.type == pygame.QUIT:
+                running = False
+        space.step(0.01) # Advances the Pymunk physics engine by 0.02 seconds per frame, updating positions and velocities.
+        clock.tick(60) # Limits the frame rate to 60 FPS to ensure smooth simulation.
+        current_stress = stress_function(data,dni,pos_matrix)
+        # refresh the screen
+        screen.fill((255, 255, 255)) # fill the screen with white to clear previous frame
+        # Calculate and display stress ； show cnt
+        stress_font = pygame.font.SysFont("Microsoft YaHei", 24)
+        stress_text = stress_font.render(f"Stress: {current_stress:.2f}", True, (0, 0, 0)) # displays stress with two decimal places.
+        screen.blit(stress_text, (10, 10))  # Display at top-left corner
+        # Displays nodes, springs and labels
+        space.debug_draw(draw_options) # Uses Pymunk's debug drawing to render objects (nodes, springs) on the screen.
+        for i, pos in enumerate(pos_matrix):
+            label = vertice[i]
+            text_surface = font.render(label, True, (0, 0, 0))
+            screen.blit(text_surface, (pos[0] - 10, pos[1] - 10))
+        pygame.display.flip() # Updates the entire screen with new frame data.
+        stress_history.append(current_stress)
 
 def plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists,current_stress):
     # refresh the screen
@@ -60,17 +85,22 @@ def plot_stress_convergence_log(stress_history, file_name):
     pygame.draw.line(screen, (0, 0, 0), (margin, margin), (margin, height - margin), 2)  # Y-axis
     pygame.draw.line(screen, (0, 0, 0), (margin, height - margin), (width - margin, height - margin), 2)  # X-axis
 
+    # Y-axis ticks (log scale)
+    y_ticks = [2, 3, 4, 5, 6, 7, 8]
+    y_ticks = [ (y-5) for y in y_ticks]
+
     # Draw curve
     prev_point = None
     for i, log_s in enumerate(log_stress):
         x = margin + int(i / (num_steps - 1) * plot_width)
-        y = height - margin - int((log_s - min_log) / (max_log - min_log) * plot_height)
+        y = height - margin - int((log_s - y_ticks[0]) * plot_height / 6)
+        if log_s > y_ticks[-1] :
+            continue 
         if prev_point:
             pygame.draw.line(screen, (0, 102, 204), prev_point, (x, y), 2)
         prev_point = (x, y)
 
-    # Y-axis ticks (log scale)
-    y_ticks = [2, 3, 4, 5, 6, 7, 8]
+    # Draw Y-axis ticks and grid lines
     for y_val_log in y_ticks:
         y_pos = height - margin - int((y_val_log - y_ticks[0]) * plot_height / 6)
         label = font.render(f"{y_val_log:.2f}", True, (0, 0, 0))
