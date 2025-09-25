@@ -9,9 +9,10 @@ from library.config import *
 from library.metrics import calculate_kruskals_stress, stress_function
 from library.geometry import lcc_transformation
 from library.config import km2pix, km2Li
+from MDS_model.plot_node_link_diagram import flipping_y  # user-specified location
 
 
-def plotting_physics_simulation_animation(space, screen, draw_options,font, data, vertice, dni, pos_history):
+def plotting_physics_simulation_animation_tmp(space, screen, draw_options,font, data, vertice, dni, pos_history):
     clock = pygame.time.Clock() # control pygame time frame
     stress_history = []
     pos_history = []
@@ -117,7 +118,7 @@ def plot_stress_convergence_log(stress_history, file_name):
 
     # Labels and title
     x_label = font.render("Iteration Step", True, (0, 0, 0))
-    y_label = font.render("Stress (log scale) (unit : km^2)", True, (0, 0, 0))
+    y_label = font.render("Stress (log scale) (no unit)", True, (0, 0, 0))
     title_surface = big_font.render("Stress Convergence Curve", True, (0, 0, 0))
     screen.blit(x_label, (width // 2 - 50, height - 35))
     screen.blit(y_label, (20, 35))
@@ -192,8 +193,10 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
             edges.append(((x1, y1), (x2, y2)))
             edge_labels.append((row[0], row[1]))
             idl_edge_km.append(float(row[2]) / km2Li)
+
     # === lines with error_rate > 0.03 ===
     sorted_pairs = sorted(zip(errors, edge_labels, edges,idl_edge_km), key=lambda x: x[0], reverse=True)
+    
     top_n = 0
     for i,pair in enumerate(sorted_pairs) :
         if pair[0] > 0.03 :
@@ -424,6 +427,437 @@ def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos,
     pygame.image.save(screen, save_path)
 
     # 等待關閉
+    running = True
+    while running:
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                running = False
+    pygame.quit()
+
+
+# ========= Anchor-only Procrustes (fixed points) =========
+def procrustes_align_by_fixed_points(
+    sim_km,
+    fixed_point_labels,             # e.g., ["鄯善","都護治/烏壘", ...]
+    fixed_points_lonlat,            # [(lon,lat), ...] same order/length as labels
+    dni,
+    refer_pos = [600, 500],   # in pixel units
+    anchor_label="鄯善",
+):
+    """
+    Align a single Li-frame to a set of fixed points using 2D orthogonal Procrustes.
+    Steps:
+      1) Convert the Li frame to *km* and center it at the anchor.
+      2) Build a per-node lon/lat list (None for unknowns), fill only the fixed points,
+         and call lcc_transformation(dni, list) to get target points in km.
+      3) Use *only those fixed points* to estimate R via SVD (rotation/reflection),
+         rotating about the anchor. Return the aligned frame in km (anchor-centered).
+    Notes:
+      - Y is kept *north-up* in this function (no pygame flip).
+      - Translation is handled by anchor-centering both sets.
+    """
+    if anchor_label not in dni:
+        raise KeyError(f"Anchor '{anchor_label}' not found in dni.")
+    anc = dni[anchor_label]
+    
+    gt_lonlat = [(0,0) for _ in range(len(dni))]  # None for unknowns
+    for label, lonlat in zip(fixed_point_labels, fixed_points_lonlat):
+        if label not in dni:
+            raise KeyError(f"Fixed point '{label}' not found in dni.")
+        gt_lonlat[dni[label]] = lonlat
+    
+    gt_xy_km = lcc_transformation(dni, gt_lonlat)  # per-node list in km (None where missing)
+    
+    for i in range(len(gt_xy_km)) :
+        x, y = gt_xy_km[i]
+        if x is not None and y is not None :
+            gt_xy_km[i] = [x*km2pix, y*km2pix] # turn km to pix
+
+    # 2) Remember the full pos_matrix
+    X_full = np.asarray(deepcopy(sim_km), dtype=float)
+    X_full -= X_full[anc]  # center at anchor
+    
+    print("鄯善 : ", sim_km[dni["鄯善"]])
+    print("都護治/烏壘 : ", sim_km[dni["都護治/烏壘"]])
+    print("鄯善 : ", gt_xy_km[dni["鄯善"]])
+    print("都護治/烏壘 : ", gt_xy_km[dni["都護治/烏壘"]])
+    print()
+    
+    
+    # 3) There may be some nodes missing ground truth; filter them out
+    DeX = GtX = []
+    new_anc = 0
+    
+    
+    for label in fixed_point_labels:
+        if gt_xy_km[dni[label]][0] is None:
+            raise ValueError(f"Fixed point '{label}' is missing ground truth coordinates.")
+        DeX.append(sim_km[dni[label]])
+        GtX.append(gt_xy_km[dni[label]])
+        print(label, sim_km[dni[label]], gt_xy_km[dni[label]], DeX, GtX, "\n")
+        if label == anchor_label:
+            new_anc = len(DeX) - 1  # index in the filtered list
+        
+    sim_km = deepcopy(DeX)
+    gt_xy_km = deepcopy(GtX)
+    
+    X_px = np.asarray(sim_km, dtype=float)
+    G_px = np.asarray(gt_xy_km, dtype=float)
+    
+    
+    # Center both sets at the anchor (rotate about 鄯善)
+    X0 = X_px - X_px[new_anc]
+    G0 = G_px - G_px[new_anc]
+
+    #    Orthogonal Procrustes (rotation or reflection)
+    #    Minimize || X0 R - G0 ||_F, subject to R^T R = I, det(R) = +1
+    C = X0.T @ G0                      
+    U, _, Vt = np.linalg.svd(C)
+    R = U @ Vt
+
+    # Apply the R matrix (about the anchor), then translate so 鄯善 = refer_pos
+    X_rot = X_full @ R
+    aligned_pos = X_rot + np.asarray(refer_pos, dtype=float)
+
+    return aligned_pos.tolist()
+
+def plot_three_model_convergence_pygame_pixelaware(
+    pos_history_physics,
+    pos_history_directed_mds,
+    pos_history_stress_mj,
+    *,
+    vertice,
+    dni,
+    data,
+    ground_truth_positions,
+    refer_pos=(600, 500),
+    window_size=(1200, 750),
+    anchor_label="鄯善",
+    orientation="pygame",           # "pygame" (y-down) 或 "north-up"
+    stress_y_scale="log",           # "log" 或 "linear"
+    bin_size_iters=10,              # ★ 以 iterations 分箱：可設 5、10、20
+    band_alpha=38,                  # ★ 包絡帶透明度（~15%）
+    save_path="C:/Users/justi/Desktop/project/results/ThreeModels_RMSE_Kruskal_pixelaware.png",
+):
+    """
+    以「固定 iterations 數」分箱的像素友善收斂圖：
+      • 上：Kruskal’s stress（預設 log）
+      • 下：RMSE（linear）
+    每個 bin 繪製：
+      - min~max 半透明包絡帶（約 15%）
+      - median 實線
+    並保留/強化座標軸與 y-tick 邊界檢查。
+    """
+
+    # --- 兼容 import（專案/單檔兩種結構） ---
+    try:
+        from library.config import km2pix, km2Li
+        from library.metrics import calculate_kruskals_stress
+        from library.geometry import lcc_transformation
+    except Exception:
+        from metrics import calculate_kruskals_stress
+        from geometry import lcc_transformation   # 若你不是 library 結構，請確保有對應模組
+        # 若 config 不在 library，可自行設置或 import
+        try:
+            from config import km2pix, km2Li
+        except Exception:
+            km2pix, km2Li =1/(10 * 0.415), 1/0.415  # 後備（避免崩潰；數值會不準）
+
+    # flipping_y：盡量沿用你的實作（在 MDS_model.plot_node_link_diagram）
+    try:
+        from MDS_model.plot_node_link_diagram import flipping_y
+    except Exception:
+        def flipping_y(P, height):
+            return [(x, height - y) for (x, y) in P]
+
+    if anchor_label not in dni:
+        raise KeyError(f"Anchor '{anchor_label}' not found in dni.")
+
+    W, H = window_size
+    anc_idx = dni[anchor_label]
+
+    # --- Ground Truth 轉 LCC（km） ---
+    gt_xy_km = lcc_transformation(dni, ground_truth_positions)
+    if orientation == "north-up":
+        # pygame y 向下，若使用 north-up，需翻轉
+        gt_xy_km = [(gx, -gy) if gx is not None else (None, None) for gx, gy in gt_xy_km]
+
+    # --- 兩種歷程到 km 的轉換 ---
+    def phys_px_to_km(frame_px):
+        pts = frame_px if orientation == "pygame" else flipping_y(frame_px, height=H)
+        return [((x - refer_pos[0]) / km2pix, (y - refer_pos[1]) / km2pix) for (x, y) in pts]
+
+    def mds_li_to_km(frame_li):
+        ax, ay = frame_li[anc_idx]
+        out = []
+        for (x, y) in frame_li:
+            kx = (x - ax) / km2Li
+            ky = (y - ay) / km2Li
+            if orientation == "pygame":
+                ky = -ky
+            out.append((kx, ky))
+        return out
+
+    def mds_li_to_pixels_for_kruskal(frame_li):
+        km_pts = mds_li_to_km(frame_li)
+        return [(x * km2pix, y * km2pix) for (x, y) in km_pts]
+
+    # --- Series builders（每一步 RMSE / Kruskal） ---
+    def compute_rmse_series(pos_history, kind):
+        series = []
+        for P in pos_history:
+            sim_km = phys_px_to_km(P) if kind == "physics" else mds_li_to_km(P)
+            se = []
+            for i, (sx, sy) in enumerate(sim_km):
+                gx, gy = gt_xy_km[i]
+                if gx is None:  # 缺 GT
+                    continue
+                dx, dy = sx - gx, sy - gy
+                se.append(dx * dx + dy * dy)
+            series.append(math.sqrt(sum(se) / len(se)) if se else float("nan"))
+        return series
+
+    def compute_kruskal_series(pos_history, kind):
+        series = []
+        for P in pos_history:
+            if kind == "physics":
+                P_pix = deepcopy(P) if orientation == "pygame" else flipping_y(deepcopy(P), height=H)
+            else:
+                P_pix = mds_li_to_pixels_for_kruskal(P)
+            ks = float(calculate_kruskals_stress(dni, deepcopy([list(q) for q in P_pix]), data))
+            series.append(ks)
+        return series
+
+    rmse_ph = compute_rmse_series(pos_history_physics, "physics")
+    rmse_dm = compute_rmse_series(pos_history_directed_mds, "mds")
+    rmse_sm = compute_rmse_series(pos_history_stress_mj, "mds")
+
+    ks_ph = compute_kruskal_series(pos_history_physics, "physics")
+    ks_dm = compute_kruskal_series(pos_history_directed_mds, "mds")
+    ks_sm = compute_kruskal_series(pos_history_stress_mj, "mds")
+
+    xs_ph = list(range(len(rmse_ph)))
+    xs_dm = list(range(len(rmse_dm)))
+    xs_sm = list(range(len(rmse_sm)))
+    x_max_iter = max(len(xs_ph), len(xs_dm), len(xs_sm)) - 1 if max(len(xs_ph), len(xs_dm), len(xs_sm)) > 0 else 1
+
+    # --- pygame 視窗 ---
+    pygame.init()
+    flags = pygame.DOUBLEBUF
+    try:
+        screen = pygame.display.set_mode(window_size, flags, vsync=1)
+    except TypeError:
+        screen = pygame.display.set_mode(window_size, flags)
+    pygame.display.set_caption("Convergence: Kruskal's Stress & RMSE (Binned Envelope + Median)")
+    font = pygame.font.SysFont("Arial", 18)
+    title_font = pygame.font.SysFont("Arial", 26)
+
+    M = 80
+    top = pygame.Rect(M, M + 20, W - 2 * M, (H - 3 * M) // 2)
+    bot = pygame.Rect(M, top.bottom + M, W - 2 * M, (H - 3 * M) // 2)
+
+    def finite(vals):
+        out = []
+        for v in vals:
+            if v is None: 
+                continue
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                continue
+            out.append(v)
+        return out
+
+    # --- y 範圍與 y 映射 ---
+    # RMSE linear
+    rm_all = finite(rmse_ph + rmse_dm + rmse_sm) or [0.0, 1.0]
+    yr_min, yr_max = min(rm_all), max(rm_all)
+
+    # Stress
+    ks_all = finite(ks_ph + ks_dm + ks_sm) or [1.0]
+    if stress_y_scale == "log":
+        pos_vals = [v for v in ks_all if v > 0]
+        if not pos_vals:
+            pos_vals = [1e-12]
+        eps = 0.5 * min(pos_vals)
+        def ylog(v): return math.log10(max(v, eps))
+        yk_vals = [ylog(v) for v in ks_all]
+        yk_min_log, yk_max_log = min(yk_vals), max(yk_vals)
+        # decade ticks（邊界檢查：只畫在矩形範圍內）
+        ks_max_tick = math.ceil(yk_max_log)
+        ks_min_tick = math.floor(yk_min_log)
+        ticks_log = list(range(ks_min_tick, ks_max_tick + 1))
+        span = max(ks_max_tick - ks_min_tick, 1e-12)
+        def map_ks_y(v):
+            return int(top.bottom - ((math.log10(max(v, eps)) - ks_min_tick) / span) * top.height)
+    else:
+        yk_min_lin, yk_max_lin = min(ks_all), max(ks_all)
+        ks_min_tick = math.floor(yk_min_lin)
+        ks_max_tick = math.ceil(yk_max_lin)
+        span = max(ks_max_tick - ks_min_tick, 1e-12)
+        def map_ks_y(v):
+            return int(top.bottom - ((v - ks_min_tick) / span) * top.height)
+
+    def map_rmse_y(v):
+        rm_max_tick = math.floor(yr_max)
+        rm_min_tick = math.ceil(yr_min)
+        span = max(rm_max_tick - rm_min_tick, 1e-12)
+        return int(bot.bottom - ((v - rm_min_tick) / span) * bot.height)
+
+    # --- x 映射（iteration → pixel）---
+    def map_x_to_pixel(x_idx, rect):
+        if x_max_iter <= 0:
+            return rect.left
+        return rect.left + int(round((x_idx / x_max_iter) * (rect.width - 1)))
+
+    # --- 以 iteration 分箱，輸出 bin 中心 x 與 y 的 min/max/median ---
+    def bin_min_max_median_by_iters(xs, ys, bin_size):
+        N = len(xs)
+        if N == 0 or bin_size <= 0:
+            return [], [], [], []
+        bx, by_min, by_max, by_med = [], [], [], []
+        i = 0
+        while i < N:
+            j = min(i + bin_size, N)
+            seg = [ys[k] for k in range(i, j) if (ys[k] is not None and not (isinstance(ys[k], float) and (math.isnan(ys[k]) or math.isinf(ys[k]))))]
+            if seg:
+                vmin = min(seg); vmax = max(seg)
+                med = float(np.median(seg))
+                x_mid = 0.5 * (xs[i] + xs[j - 1])  # bin 中心
+                bx.append(x_mid); by_min.append(vmin); by_max.append(vmax); by_med.append(med)
+            i = j
+        return bx, by_min, by_max, by_med
+
+    # --- 座標軸繪製（含邊界檢查） ---
+    def draw_axes_linear(rect, y_min, y_max, x_max_iter, y_label, x_label):
+        screen.fill((255, 255, 255), rect)
+        pygame.draw.rect(screen, (245, 245, 245), rect)
+        # 軸線
+        pygame.draw.line(screen, (0, 0, 0), (rect.left, rect.bottom), (rect.right, rect.bottom), 2)
+        pygame.draw.line(screen, (0, 0, 0), (rect.left, rect.top),    (rect.left, rect.bottom), 2)
+        # grid
+        for k in range(6):
+            yy = rect.bottom - int(k * rect.height / 5)
+            if rect.top <= yy <= rect.bottom:
+                pygame.draw.line(screen, (220, 220, 220), (rect.left, yy), (rect.right, yy), 1)
+        for k in range(6):
+            xx = rect.left + int(k * rect.width / 5)
+            if rect.left <= xx <= rect.right:
+                pygame.draw.line(screen, (220, 220, 220), (xx, rect.top), (xx, rect.bottom), 1)
+        # 標籤
+        screen.blit(font.render(y_label, True, (0, 0, 0)), (rect.left - 10, rect.top - 25))
+        screen.blit(font.render(x_label, True, (0, 0, 0)), (rect.centerx - 40, rect.bottom + 10))
+        # ticks（超界不畫）
+        for k in range(6):
+            yv = y_min + (ceil(y_max) - floor(y_min)) * (k / 5.0)
+            yy = rect.bottom - int(k * rect.height / 5)
+            if rect.top <= yy <= rect.bottom:
+                screen.blit(font.render(f"{yv:.3g}", True, (0, 0, 0)), (rect.left - 70, yy - 8))
+            xv = int(x_max_iter * (k / 5.0))
+            xx = rect.left + int(k * rect.width / 5)
+            if rect.left <= xx <= rect.right:
+                screen.blit(font.render(f"{xv}", True, (0, 0, 0)), (xx - 10, rect.bottom + 8))
+
+    def draw_axes_log(rect, decade_ticks, y_min_log, y_max_log, x_max_iter, y_label, x_label):
+        screen.fill((255, 255, 255), rect)
+        pygame.draw.rect(screen, (245, 245, 245), rect)
+        pygame.draw.line(screen, (0, 0, 0), (rect.left, rect.bottom), (rect.right, rect.bottom), 2)
+        pygame.draw.line(screen, (0, 0, 0), (rect.left, rect.top),    (rect.left, rect.bottom), 2)
+        span = max(ceil(y_max_log) - floor(y_min_log), 1e-12)
+        # decade grid + labels（僅在範圍內才畫）
+        for t in decade_ticks:
+            yy = rect.bottom - int(((t - floor(y_min_log)) / span) * rect.height)
+            if rect.top <= yy <= rect.bottom:
+                pygame.draw.line(screen, (210, 210, 210), (rect.left, yy), (rect.right, yy), 1)
+                screen.blit(font.render(f"1e{t}", True, (0, 0, 0)), (rect.left - 60, yy - 8))
+        # x-grid
+        for k in range(6):
+            xx = rect.left + int(k * rect.width / 5)
+            if rect.left <= xx <= rect.right:
+                pygame.draw.line(screen, (220, 220, 220), (xx, rect.top), (xx, rect.bottom), 1)
+        # 標籤
+        screen.blit(font.render(y_label, True, (0, 0, 0)), (rect.left - 10, rect.top - 25))
+        screen.blit(font.render(x_label, True, (0, 0, 0)), (rect.centerx - 40, rect.bottom + 10))
+
+    # --- 包絡帶 + 中位數繪製（以 iteration 分箱） ---
+    def draw_binned_band_and_median(rect, xs, ys, map_y, color, bin_size, alpha=38, median_width=2):
+        bx, ymin_v, ymax_v, ymed_v = bin_min_max_median_by_iters(xs, ys, bin_size)
+        if not bx:
+            return
+        # 轉 pixel
+        pxs  = [map_x_to_pixel(xm, rect) for xm in bx]
+        ymins = [map_y(v) for v in ymin_v]
+        ymaxs = [map_y(v) for v in ymax_v]
+        ymeds = [map_y(v) for v in ymed_v]
+
+        # --- band polygon（上界左→右，接下界右→左） ---
+        poly_points = list(zip(pxs, ymaxs)) + list(zip(reversed(pxs), reversed(ymins)))
+        band = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        poly_local = [(x - rect.left, y - rect.top) for (x, y) in poly_points]
+        band_color = (color[0], color[1], color[2], max(0, min(255, alpha)))
+        if len(poly_local) >= 3:
+            pygame.draw.polygon(band, band_color, poly_local)
+        screen.blit(band, rect.topleft)
+
+        # --- median 折線（AA）---
+        median_points = list(zip(pxs, ymeds))
+        if len(median_points) >= 2:
+            pygame.draw.aalines(screen, color, False, median_points)
+            # 讓線稍微厚一些
+            for i in range(1, median_width):
+                shifted = [(x, y - i) for (x, y) in median_points]
+                pygame.draw.aalines(screen, color, False, shifted)
+
+    # --- 顏色（沿用固定色） ---
+    C_PH = (0, 102, 204)    # Physics: Blue
+    C_DM = (255, 140, 0)    # Directed-MDS: Orange
+    C_SM = (34, 139, 34)    # Stress-Majorization: Green
+
+    # --- clear & title ---
+    screen.fill((255, 255, 255))
+    title = title_font.render(
+        f"Convergence (Binned={bin_size_iters}): Kruskal's Stress & RMSE",
+        True, (0, 0, 0)
+    )
+    screen.blit(title, (W // 2 - title.get_width() // 2, 20))
+
+    # --- TOP: Kruskal's stress（軸） ---
+    if stress_y_scale == "log":
+        draw_axes_log(top, ticks_log, yk_min_log, yk_max_log, x_max_iter, "Stress", "Iteration")
+        mapY_top = map_ks_y
+    else:
+        draw_axes_linear(top, yk_min_lin, yk_max_lin, x_max_iter, "Stress", "Iteration")
+        mapY_top = map_ks_y
+
+    # --- BOTTOM: RMSE（軸） ---
+    draw_axes_linear(bot, yr_min, yr_max, x_max_iter, "RMSE (km)", "Iteration")
+
+    bin_size_iters_zero = 1
+    
+    # --- 繪製包絡帶 + 中位線 ---
+    draw_binned_band_and_median(top, xs_ph, ks_ph, mapY_top, C_PH, bin_size_iters_zero, alpha=band_alpha, median_width=2)
+    draw_binned_band_and_median(top, xs_dm, ks_dm, mapY_top, C_DM, bin_size_iters_zero, alpha=band_alpha, median_width=2)
+    draw_binned_band_and_median(top, xs_sm, ks_sm, mapY_top, C_SM, bin_size_iters_zero, alpha=band_alpha, median_width=2)
+
+    draw_binned_band_and_median(bot, xs_ph, rmse_ph, map_rmse_y, C_PH, bin_size_iters_zero, alpha=band_alpha, median_width=2)
+    draw_binned_band_and_median(bot, xs_dm, rmse_dm, map_rmse_y, C_DM, bin_size_iters, alpha=band_alpha, median_width=2)
+    draw_binned_band_and_median(bot, xs_sm, rmse_sm, map_rmse_y, C_SM, bin_size_iters_zero, alpha=band_alpha, median_width=2)
+
+    # --- 簡易圖例 ---
+    def legend(x, y):
+        items = [("Physics", C_PH), ("Directed-MDS", C_DM), ("Stress-Maj", C_SM)]
+        dx = 0
+        for label, col in items:
+            pygame.draw.line(screen, col, (x + dx, y), (x + dx + 20, y), 4)
+            screen.blit(font.render(label, True, (0, 0, 0)), (x + dx + 30, y - 10))
+            dx += 140
+
+    legend(top.right - 400, top.top + 20  )
+    legend(bot.right - 400, bot.top + 20 )
+
+    pygame.display.flip()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        pygame.image.save(screen, save_path)
+
     running = True
     while running:
         for e in pygame.event.get():

@@ -7,6 +7,8 @@ from library.config import km2pix, km2Li
 # setting unknown points' weight 0, calculating L^w L^Z, then solve L^w * X(t+1) = L^X(t) * X(t),then
 # by cholesky and trangular solver, until epsilon < 10^-3
 
+iteration_times = 1000
+
 def inix(n,d) :
     #   initialize ini_X by random ( or by arrange and reshape )
     ini_X = 1500*np.random.rand(n,d)
@@ -81,8 +83,8 @@ def calculate_LZ(n,weight,dismatrix,Z) :
 def stress(n,X,weight,dismatrix) :
     stress_value = 0
     for i in range(n) :
-        for j in range(n) :
-            stress_value  = stress_value + weight[i][j] * ( (LA.norm(X[i]-X[j])-dismatrix[i][j])*(LA.norm(X[i]-X[j])-dismatrix[i][j]) ) / (km2Li**2)
+        for j in range(i) :
+            stress_value  = stress_value + weight[i][j] * ( (LA.norm(X[i]-X[j])-dismatrix[i][j])*(LA.norm(X[i]-X[j])-dismatrix[i][j]) )
     return stress_value
 def equation_solver(LW,LZ,Z) :
     #   by cholesky decomposition
@@ -102,7 +104,8 @@ def iterate(n,ini_X,weight,dismatrix,LW,graph,vertice,edges) :
     stress_history = [pre_stress]
     pos_history = [deepcopy(ini_X)]
     X = ini_X
-    while epsilon > 0.001 and len(stress_history) < 500 :
+    # while epsilon > 0.001 and len(stress_history) < 1000 :
+    while len(stress_history) <= iteration_times :
         Z = deepcopy(X)
         LZ = calculate_LZ(n,weight,dismatrix,Z)
         X = equation_solver(LW,LZ,Z)

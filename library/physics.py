@@ -30,7 +30,7 @@ def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_p
     # groupdni = classify_nodes()
     wrong_direction_lists,stress_history,pos_history, pos_matrix = run_physics_simulation(min_distance,repulsion_strength,resistance,directional_force_magnitude,screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix, plot)
         
-    return wrong_direction_lists,stress_history,pos_matrix
+    return wrong_direction_lists,stress_history,pos_history,pos_matrix
 def create_nodes_and_springs(n,mass,radius,vrange,spring_stiffness,spring_damping,fixmass,space,data, dni,pos_matrix,fixed_positions_list) : #add nodes and springs into pymunk
     nodes = [pymunk.Body(mass,pymunk.moment_for_circle(mass, 0, radius)) for _ in range(n)]
     # add fixed nodes
@@ -75,13 +75,12 @@ def run_physics_simulation(min_distance,repulsion_strength,resistance,directiona
         nodes,cnt,wrong_direction_lists = apply_forces(min_distance,repulsion_strength,resistance,directional_force_magnitude,nodes,directional_data, dni)
         for i,node in enumerate(nodes) :
             pos_matrix[i] = nodes[i].position
-            # pos_matrix = shift(pos_matrix,1,[600,375]) # shift the points to the center to avoid digressing
         pos_history.append(deepcopy(pos_matrix))
         current_stress = stress_function(data,dni,pos_matrix)
         if plot :
             screen,space = plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists,current_stress)
         stress_history.append(current_stress)
-        if iteration > 2000:
+        if iteration > stop_physim_iteration_time :
             break
     return wrong_direction_lists,stress_history,pos_history, pos_matrix
 def apply_forces(min_distance,repulsion_strength,resistance,directional_force_magnitude,nodes,directional_data, dni):

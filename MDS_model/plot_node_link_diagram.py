@@ -10,6 +10,7 @@ from copy import deepcopy
 from library.config import km2pix, km2Li
 from library.data_io import uploading_directional_data, uploading_ground_truth
 from library.geometry import lcc_transformation
+from MDS_model.directed_mds_model import unit_direction_dict  # 東/西/南/北/東南/… 的單位向量
 
 def wrong_directions_nonflip(pos_matrix, vertice, dni):
     
@@ -273,6 +274,241 @@ def draw_node_link_pygame(
 
     pygame.quit()
 
+def draw_node_link_pygame_dirarrow(
+    pos: List[Tuple[float, float]],
+    vertice: List[Any],
+    edges: List[Tuple[Any, Any]],
+    *,
+    directed: bool = False,                 # 原參數：是否把 edges 全畫成箭頭（沿邊方向）
+    window_size: Tuple[int, int] = (1200, 750),
+    bg_color: Tuple[int, int, int] = (250, 250, 250),
+    node_color: Tuple[int, int, int] = (30, 144, 255),
+    edge_color: Tuple[int, int, int] = (60, 60, 60),
+    label_color: Tuple[int, int, int] = (20, 20, 20),
+    node_radius_base: int = 6,
+    label_font_size: int = 16,
+    font_path: Optional[str] = None,
+    caption: str = "節點連結圖（UTF-8）",
+    interactive: bool = True,
+    save_path: Optional[str] = None,
+
+    # === 新增：用來畫羅盤方向箭頭（通常來自 sel_data） ===
+    # 期待格式：[(src_name, dst_name, dir_str), ...] 例：("鄯善","且末","東南")
+    directional_data: Optional[List[Tuple[Any, Any, str]]] = None,
+    dir_arrow_color: Tuple[int, int, int] = (200, 0, 0),
+    dir_arrow_len: float = 28.0,      # 單支羅盤箭頭的標準長度（像素）
+    dir_arrow_width: int = 2,         # 羅盤箭頭的線寬
+    dir_head_len: float = 10.0,       # 箭頭頭長度
+    dir_head_angle: float = 28.0,     # 箭頭頭張角（度）
+    dir_mid_offset: float = 0.0,      # 從邊中點沿方向再位移一點點（像素）
+) -> None:
+    """
+    以 Pygame 繪製節點連結圖，並可「額外」疊加羅盤方向箭頭（由 directional_data + unit_direction_dict 決定）。
+    注意：羅盤箭頭方向取自 compass（東南西北…），畫在 u→v 的「線段中點」附近，與邊線無必然同向。
+    """
+
+    # --- 名稱→索引 ---
+    name_to_idx = {name: i for i, name in enumerate(vertice)}
+
+    # --- 邊集合（若 undirected 就去重） ---
+    if directed:
+        draw_edges = [(u, v) for (u, v) in edges if u in name_to_idx and v in name_to_idx]
+    else:
+        def _norm(u, v): return (u, v) if str(u) <= str(v) else (v, u)
+        draw_edges = list({_norm(u, v) for (u, v) in edges if u in name_to_idx and v in name_to_idx})
+
+    # --- 度數（給節點大小輕微加權） ---
+    degree = defaultdict(int)
+    for u, v in draw_edges:
+        degree[u] += 1
+        degree[v] += 1
+
+    # --- 視窗映射（置中＋縮放） ---
+    xs = [pos[i][0] for i in range(len(vertice))]
+    ys = [pos[i][1] for i in range(len(vertice))]
+    min_x, max_x = (min(xs), max(xs)) if xs else (0.0, 1.0)
+    min_y, max_y = (min(ys), max(ys)) if ys else (0.0, 1.0)
+    data_w = max(max_x - min_x, 1e-6)
+    data_h = max(max_y - min_y, 1e-6)
+
+    W, H = window_size
+    margin = 60
+    scale = 0.9 * min((W - 2 * margin) / data_w, (H - 2 * margin) / data_h)
+    offset = [
+        (W - scale * (min_x + max_x)) / 2.0,
+        (H - scale * (min_y + max_y)) / 2.0,
+    ]
+
+    def world_to_screen(pxy):
+        return (pxy[0] * scale + offset[0], pxy[1] * scale + offset[1])
+
+    def node_radius(name):
+        return int(node_radius_base + 1.5 * math.sqrt(degree.get(name, 1)))
+
+    # 畫沿兩點方向的箭頭（一般有向邊用）
+    def draw_edge_arrow(surface, color, a, b, width=2, head_len=12, head_angle=28):
+        pygame.draw.aaline(surface, color, a, b)
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        ang = math.atan2(dy, dx)
+        left = (b[0] - head_len * math.cos(ang - math.radians(head_angle)),
+                b[1] - head_len * math.sin(ang - math.radians(head_angle)))
+        right = (b[0] - head_len * math.cos(ang + math.radians(head_angle)),
+                 b[1] - head_len * math.sin(ang + math.radians(head_angle)))
+        pygame.draw.polygon(surface, color, [b, left, right])
+
+    # 新增：畫「羅盤方向箭頭」（不看邊向量；只看 unit_direction_dict）
+    def draw_compass_arrow(surface, color, center_xy, unit_vec_2d,
+                           length=28.0, width=2, head_len=10.0, head_angle=28.0, advance=0.0):
+        """
+        在 center_xy 畫一支朝向 unit_vec_2d 的箭頭；整支箭長 'length'。
+        若 advance>0，會先沿 unit_vec 方向把箭整體平移一點，避免壓到節點或文字。
+        """
+        ux, uy = float(unit_vec_2d[0]), float(unit_vec_2d[1])
+        # 正規化（保險）
+        L = math.hypot(ux, uy) or 1.0
+        ux, uy = ux / L, uy / L
+
+        cx, cy = center_xy
+        # 先位移
+        cx += ux * advance
+        cy += uy * advance
+
+        # 以 center 為中點，畫一段 [p -> q]
+        half = length * 0.5
+        px, py = cx - ux * half, cy - uy * half
+        qx, qy = cx + ux * half, cy + uy * half
+
+        pygame.draw.aaline(surface, color, (px, py), (qx, qy), True)
+
+        ang = math.atan2(qy - py, qx - px)
+        left = (qx - head_len * math.cos(ang - math.radians(head_angle)),
+                qy - head_len * math.sin(ang - math.radians(head_angle)))
+        right = (qx - head_len * math.cos(ang + math.radians(head_angle)),
+                 qy - head_len * math.sin(ang + math.radians(head_angle)))
+        pygame.draw.polygon(surface, color, [(qx, qy), left, right])
+
+    # --- Pygame 視窗 ---
+    pygame.init()
+    screen = pygame.display.set_mode((W, H))
+    pygame.display.set_caption(caption)
+    clock = pygame.time.Clock()
+
+    # 字型（沿用你原本的挑字型函式）
+    font = _match_cjk_font(label_font_size, font_path)
+
+    # 預先算好螢幕座標
+    scr_pos = [world_to_screen(pos[i]) for i in range(len(vertice))]
+
+    # 互動狀態
+    dragging = False
+    drag_start = (0, 0)
+    offset_start = (0, 0)
+
+    def render_frame():
+        screen.fill(bg_color)
+
+        # --- 先畫邊 ---
+        if directed:
+            for (u, v) in draw_edges:
+                a = scr_pos[name_to_idx[u]]
+                b = scr_pos[name_to_idx[v]]
+                draw_edge_arrow(screen, edge_color, a, b, width=2)
+        else:
+            for (u, v) in draw_edges:
+                a = scr_pos[name_to_idx[u]]
+                b = scr_pos[name_to_idx[v]]
+                pygame.draw.aaline(screen, edge_color, a, b)
+
+        # --- 疊加「羅盤方向箭頭」(由 directional_data + unit_direction_dict 決定) ---
+        if directional_data:
+            for (src, dst, dstr) in directional_data:
+                if src not in name_to_idx or dst not in name_to_idx:
+                    continue
+                if dstr not in unit_direction_dict:
+                    continue  # 不在你的字典，就跳過
+
+                a = scr_pos[name_to_idx[src]]
+                b = scr_pos[name_to_idx[dst]]
+                # 邊中點
+                mx, my = ( (a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5 )
+
+                # 羅盤方向單位向量（以你檔案中的定義為準）
+                uvec = unit_direction_dict[dstr]
+
+                # 在中點位置，沿「羅盤」方向畫出短箭頭（純顯示約束方向）
+                draw_compass_arrow(
+                    screen, dir_arrow_color, (mx, my), uvec,
+                    length=dir_arrow_len, width=dir_arrow_width,
+                    head_len=dir_head_len, head_angle=dir_head_angle,
+                    advance=dir_mid_offset
+                )
+
+        # --- 畫節點 ---
+        for name in vertice:
+            i = name_to_idx[name]
+            x, y = scr_pos[i]
+            pygame.draw.circle(screen, node_color, (int(x), int(y)), node_radius(name))
+
+        # --- 標籤 ---
+        for name in vertice:
+            i = name_to_idx[name]
+            x, y = scr_pos[i]
+            label_surf = font.render(str(name), True, label_color)
+            screen.blit(label_surf, (x + 8, y + 4))
+
+        pygame.display.flip()
+
+    # 初次繪製
+    render_frame()
+
+    # 存檔（如指定）
+    if save_path:
+        pygame.image.save(screen, save_path)
+
+    # 互動 loop（僅滑鼠拖曳與滾輪縮放）
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+            if not interactive:
+                continue
+
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                dragging = True
+                drag_start = pygame.mouse.get_pos()
+                offset_start = (offset[0], offset[1])
+
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                dragging = False
+
+            elif event.type == pygame.MOUSEMOTION and dragging:
+                mx, my = pygame.mouse.get_pos()
+                dx, dy = mx - drag_start[0], my - drag_start[1]
+                offset[0] = offset_start[0] + dx
+                offset[1] = offset_start[1] + dy
+                for i in range(len(scr_pos)):
+                    scr_pos[i] = world_to_screen(pos[i])
+                render_frame()
+
+            elif event.type == pygame.MOUSEWHEEL:
+                mx, my = pygame.mouse.get_pos()
+                wx = (mx - offset[0]) / scale
+                wy = (my - offset[1]) / scale
+                zoom = 1.15 if event.y > 0 else (1 / 1.15)
+                scale *= zoom
+                offset[0] = mx - wx * scale
+                offset[1] = my - wy * scale
+                for i in range(len(scr_pos)):
+                    scr_pos[i] = world_to_screen(pos[i])
+                render_frame()
+
+        clock.tick(60)
+
+    pygame.quit()
+
+
 def animate_node_link_pygame(
     pos_history: List,                 # list of (n x 2) numpy arrays or list[list[float]]
     vertice: List[Any],
@@ -470,7 +706,7 @@ def animate_node_link_pygame(
     pygame.quit()
 
 # For stress majorization
-def scaling_and_procrustes_analysis(pos_matrix, vertice, dni, refer_pos) :
+def procrustes_analysis_to_gt(flip, vertice, dni, refer_pos) :
     """
     Align positions (in Li) to ground truth (in km) using rotation/reflection Procrustes
     about the anchor node '鄯善', and return pixel coordinates aligned so that the
@@ -480,7 +716,7 @@ def scaling_and_procrustes_analysis(pos_matrix, vertice, dni, refer_pos) :
     # Basic validation
     if not isinstance(refer_pos, (list, tuple)) or len(refer_pos) != 2:
         raise ValueError("refer_pos must be a 2-element list/tuple like [x, y].")
-    if len(pos_matrix) != len(vertice):
+    if len(flip) != len(vertice):
         raise ValueError("pos_matrix and vertice must have the same length.")
 
     # Find the anchor index (first occurrence if duplicated)
@@ -489,43 +725,38 @@ def scaling_and_procrustes_analysis(pos_matrix, vertice, dni, refer_pos) :
     except KeyError:
         raise KeyError("Label '鄯善' not found in vertice.") from None
 
-    # 1) Scale by 1/10, turn Li to pixel
-    scale = 0.1
-    scaled = [[x * scale, y * scale] for x, y in pos_matrix]
-
-    # 2) Compute translation so '鄯善' lands at refer_pos
-    anchor_x, anchor_y = scaled[anchor_idx]
-    dx = refer_pos[0] - anchor_x
-    dy = refer_pos[1] - anchor_y
-
-    # 3) Apply translation to all points
-    aligned = [[x + dx, y + dy] for x, y in scaled]
     
-    # 3.5) Be aware that the y-axis direction is flipped in pygame
-    flip = flipping_y(aligned, height=750)
-
-    # 4) Do Orthogonal Procrustes to best align with ground truth positions
+    # 1) Do Orthogonal Procrustes to best align with ground truth positions
     ground_truth_positions = uploading_ground_truth(vertice,dni)
     gt_xy_km = lcc_transformation(dni, ground_truth_positions)
     
-    # 4.1) Remember the full pos_matrix
+    for i in range(len(gt_xy_km)) :
+        x, y = gt_xy_km[i]
+        if x is not None and y is not None :
+            gt_xy_km[i] = [x*km2pix, y*km2pix] # turn km to pix
+    
+    # 2) Remember the full pos_matrix
     X_full = np.asarray(deepcopy(flip), dtype=float)
     X_full -= X_full[anchor_idx]  # center at anchor
     
-    # 4.5) There may be some nodes missing ground truth; filter them out
+    # 3) There may be some nodes missing ground truth; filter them out
     DeX = Deg = []
+    new_anc = 0
     for i, (gtx, gty) in enumerate(gt_xy_km):
         if gtx is not None and gty is not None:
             DeX.append(flip[i])
             Deg.append([gtx, gty])
+        if vertice[i] == "鄯善":
+            new_anc = len(DeX) - 1  # new index of anchor in filtered list
+    
     flip = deepcopy(DeX)
     gt_xy_km = deepcopy(Deg)
     
     X_px = np.asarray(flip, dtype=float)
-    G_px = np.asarray(gt_xy_km, dtype=float) * km2pix  # ground truth in pixel units
+    G_px = np.asarray(gt_xy_km, dtype=float)
     # Center both sets at the anchor (rotate about 鄯善)
-    X0 = X_px - X_px[anchor_idx]
-    G0 = G_px - G_px[anchor_idx]
+    X0 = X_px - X_px[new_anc]
+    G0 = G_px - G_px[new_anc]
 
     #    Orthogonal Procrustes (rotation or reflection)
     #    Minimize || X0 R - G0 ||_F, subject to R^T R = I, det(R) = +1

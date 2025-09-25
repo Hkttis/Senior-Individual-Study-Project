@@ -15,7 +15,7 @@ def generate_CHEN_initial_positions (refer_pos): # Initialize position of points
         np.random.uniform(75, 675, size=n)   # Second column : canva 0~750
     ))
     ## pos_matrix = stress_majorization(graph,dni,vertice,edges) # inherit position form previous model
-    center_pos = [600,375]
+    center_pos = [600,500]
     pos_matrix = shift(pos_matrix,2,center_pos)
     ground_truth_positions = uploading_ground_truth(vertice,dni)
     pos_matrix,fixed_positions_list = add_fixed_positions(dni,pos_matrix,refer_pos, ground_truth_positions)

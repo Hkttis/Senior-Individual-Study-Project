@@ -28,3 +28,4 @@ RESISTANCE_BASE = 10
 
 km2pix = 1/(10 * 0.415) # 1 Li = 0.415 km, 1 pixel = 10 Li 
 km2Li = 1/0.415 # 1 Li = 0.415 km
+stop_physim_iteration_time = 1000

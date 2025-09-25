@@ -1,6 +1,5 @@
 import math
 import numpy
-import builtins
 from copy import deepcopy
 from numpy import *
 from scipy.sparse import csc_matrix
@@ -12,11 +11,12 @@ from library.config import km2pix, km2Li
 insq2 = 1/math.sqrt(2)
 unit_direction_dict = {'東':[1,0], '西':[-1,0], '北':[0,1], '南':[0,-1], 
               '東南':[insq2,-insq2], '西北':[-insq2,insq2], '東北':[insq2,insq2], '西南':[-insq2,-insq2]}
+
 # configuration
 fix_weight = 1  # weight of fixed points is 10000, let it be fixed because it wanna fit the dij
 w_weight = 1
 v_weight = 0.0001
-stop_iteration_times = 500
+stop_iteration_times = 1000
 
 
 def eudis(v1,v2) :
@@ -108,13 +108,6 @@ def compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,d
         else :
             veight[dni[row[0]]][dni[row[1]]] = v_weight / (avg_dis(dis)**2)
             veight[dni[row[1]]][dni[row[0]]] = v_weight / (avg_dis(dis)**2)
-    '''
-    for i in range(n) : # level up the weight of the points connected to the fixed points
-        if fixed_points_flag[i] ==1 :
-            for row in graph[i] :
-                veight[i][dni[row[1]]] = 1000
-                veight[dni[row[1]]][i] = 1000
-    '''
     # like weight , add into veight as same as 
     LV = [[0 for i in range(n)] for j in range(n)]
     for i in range(n) :
@@ -142,7 +135,7 @@ def compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,d
     for i in range(len(sel_data)) :
         x = dni[sel_data[i][0]]
         y = dni[sel_data[i][1]]
-        JV[x][i] = veight[x][y] # the previous one be source node
+        JV[x][i] = veight[x][y] # set the previous one to be source node
         JV[y][i] = (-1)*veight[x][y]
     
     array_weight = numpy.array(weight)
@@ -199,7 +192,7 @@ def stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis) : # we
     for i in range(s) :
         x = dni[edges[i][0]]
         y = dni[edges[i][1]]
-        stressw = stressw + weight[x][y]*((linalg.norm(X[x]-X[y])-dis[x][y])**2) / (km2Li**2)
+        stressw = stressw + weight[x][y]*((linalg.norm(X[x]-X[y])-dis[x][y])**2)
     
     for i in range(t) :
         x = dni[sel_data[i][0]]
@@ -207,7 +200,7 @@ def stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis) : # we
         v = X[y]-X[x]
         unitx = v/linalg.norm(v)
         unitdata = numpy.array(unit_direction_dict[sel_data[i][2]])
-        stressv = stressv + veight[x][y]*(( linalg.norm(v)*linalg.norm(unitx-unitdata) )**2) / (km2Li**2)
+        stressv = stressv + veight[x][y]*(( linalg.norm(v)*linalg.norm(unitx-unitdata) )**2)
         #stressv = stressv + veight[x][y]*((linalg.norm(v)*(numpy.dot(unitx,unitdata)-1))**2)
     return stressw
 def iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_direct_flag,inipos,weight,LW,veight,LV,JW,JV) :
@@ -216,11 +209,9 @@ def iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_di
     pre_stress = stress(n,s,m,t,iniX,weight,veight,in_direct_flag,dni,edges,sel_data,dis)
     now_stress = 0
     Z = iniX
-    epsilon = 1
     stress_history = [pre_stress]
     pos_history = [deepcopy(iniX)]  # record the initial positions
     cnt = 0
-    #while epsilon >= 0.0001 :
     while cnt <= stop_iteration_times :
         left = LW+LV
         right = numpy.matmul(JW,pre_DW)+numpy.matmul(JV,pre_DV)
@@ -235,7 +226,6 @@ def iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_di
         now_stress = stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis)
         pre_DW = now_DW
         pre_DV = now_DV
-        epsilon = abs((pre_stress-now_stress)/(pre_stress))
         stress_history.append(now_stress)
         pre_stress = now_stress
         cnt = cnt + 1
