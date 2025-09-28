@@ -5,7 +5,7 @@ import numpy as np
 
 from library.config import *
 from library.visualization import *
-from library.metrics import *
+from library.metrics import stress_function
 
 def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,spring_stiffness,repulsion_strength,directional_force_magnitude, plot = False) : # Main PS function
     

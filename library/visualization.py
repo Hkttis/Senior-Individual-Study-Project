@@ -6,10 +6,9 @@ import numpy as np
 from copy import deepcopy
 
 from library.config import *
-from library.metrics import calculate_kruskals_stress, stress_function
+from library.metrics import stress_function, calculate_kruskals_stress, procrustes_align_by_fixed_points
 from library.geometry import lcc_transformation
 from library.config import km2pix, km2Li
-from MDS_model.plot_node_link_diagram import flipping_y  # user-specified location
 
 
 def plotting_physics_simulation_animation_tmp(space, screen, draw_options,font, data, vertice, dni, pos_history):
@@ -435,92 +434,6 @@ def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos,
     pygame.quit()
 
 
-# ========= Anchor-only Procrustes (fixed points) =========
-def procrustes_align_by_fixed_points(
-    sim_km,
-    fixed_point_labels,             # e.g., ["鄯善","都護治/烏壘", ...]
-    fixed_points_lonlat,            # [(lon,lat), ...] same order/length as labels
-    dni,
-    refer_pos = [600, 500],   # in pixel units
-    anchor_label="鄯善",
-):
-    """
-    Align a single Li-frame to a set of fixed points using 2D orthogonal Procrustes.
-    Steps:
-      1) Convert the Li frame to *km* and center it at the anchor.
-      2) Build a per-node lon/lat list (None for unknowns), fill only the fixed points,
-         and call lcc_transformation(dni, list) to get target points in km.
-      3) Use *only those fixed points* to estimate R via SVD (rotation/reflection),
-         rotating about the anchor. Return the aligned frame in km (anchor-centered).
-    Notes:
-      - Y is kept *north-up* in this function (no pygame flip).
-      - Translation is handled by anchor-centering both sets.
-    """
-    if anchor_label not in dni:
-        raise KeyError(f"Anchor '{anchor_label}' not found in dni.")
-    anc = dni[anchor_label]
-    
-    gt_lonlat = [(0,0) for _ in range(len(dni))]  # None for unknowns
-    for label, lonlat in zip(fixed_point_labels, fixed_points_lonlat):
-        if label not in dni:
-            raise KeyError(f"Fixed point '{label}' not found in dni.")
-        gt_lonlat[dni[label]] = lonlat
-    
-    gt_xy_km = lcc_transformation(dni, gt_lonlat)  # per-node list in km (None where missing)
-    
-    for i in range(len(gt_xy_km)) :
-        x, y = gt_xy_km[i]
-        if x is not None and y is not None :
-            gt_xy_km[i] = [x*km2pix, y*km2pix] # turn km to pix
-
-    # 2) Remember the full pos_matrix
-    X_full = np.asarray(deepcopy(sim_km), dtype=float)
-    X_full -= X_full[anc]  # center at anchor
-    
-    print("鄯善 : ", sim_km[dni["鄯善"]])
-    print("都護治/烏壘 : ", sim_km[dni["都護治/烏壘"]])
-    print("鄯善 : ", gt_xy_km[dni["鄯善"]])
-    print("都護治/烏壘 : ", gt_xy_km[dni["都護治/烏壘"]])
-    print()
-    
-    
-    # 3) There may be some nodes missing ground truth; filter them out
-    DeX = GtX = []
-    new_anc = 0
-    
-    
-    for label in fixed_point_labels:
-        if gt_xy_km[dni[label]][0] is None:
-            raise ValueError(f"Fixed point '{label}' is missing ground truth coordinates.")
-        DeX.append(sim_km[dni[label]])
-        GtX.append(gt_xy_km[dni[label]])
-        print(label, sim_km[dni[label]], gt_xy_km[dni[label]], DeX, GtX, "\n")
-        if label == anchor_label:
-            new_anc = len(DeX) - 1  # index in the filtered list
-        
-    sim_km = deepcopy(DeX)
-    gt_xy_km = deepcopy(GtX)
-    
-    X_px = np.asarray(sim_km, dtype=float)
-    G_px = np.asarray(gt_xy_km, dtype=float)
-    
-    
-    # Center both sets at the anchor (rotate about 鄯善)
-    X0 = X_px - X_px[new_anc]
-    G0 = G_px - G_px[new_anc]
-
-    #    Orthogonal Procrustes (rotation or reflection)
-    #    Minimize || X0 R - G0 ||_F, subject to R^T R = I, det(R) = +1
-    C = X0.T @ G0                      
-    U, _, Vt = np.linalg.svd(C)
-    R = U @ Vt
-
-    # Apply the R matrix (about the anchor), then translate so 鄯善 = refer_pos
-    X_rot = X_full @ R
-    aligned_pos = X_rot + np.asarray(refer_pos, dtype=float)
-
-    return aligned_pos.tolist()
-
 def plot_three_model_convergence_pygame_pixelaware(
     pos_history_physics,
     pos_history_directed_mds,
@@ -530,6 +443,8 @@ def plot_three_model_convergence_pygame_pixelaware(
     dni,
     data,
     ground_truth_positions,
+    fixed_point_labels = [],
+    fixed_point_lonlat = [],
     refer_pos=(600, 500),
     window_size=(1200, 750),
     anchor_label="鄯善",
@@ -607,6 +522,8 @@ def plot_three_model_convergence_pygame_pixelaware(
         series = []
         for P in pos_history:
             sim_km = phys_px_to_km(P) if kind == "physics" else mds_li_to_km(P)
+            if kind == "strmds" :
+                P = procrustes_align_by_fixed_points(deepcopy(P), fixed_point_labels, fixed_point_lonlat, dni)
             se = []
             for i, (sx, sy) in enumerate(sim_km):
                 gx, gy = gt_xy_km[i]
@@ -629,8 +546,8 @@ def plot_three_model_convergence_pygame_pixelaware(
         return series
 
     rmse_ph = compute_rmse_series(pos_history_physics, "physics")
-    rmse_dm = compute_rmse_series(pos_history_directed_mds, "mds")
-    rmse_sm = compute_rmse_series(pos_history_stress_mj, "mds")
+    rmse_dm = compute_rmse_series(pos_history_directed_mds, "dirmds")
+    rmse_sm = compute_rmse_series(pos_history_stress_mj, "strmds")
 
     ks_ph = compute_kruskal_series(pos_history_physics, "physics")
     ks_dm = compute_kruskal_series(pos_history_directed_mds, "mds")

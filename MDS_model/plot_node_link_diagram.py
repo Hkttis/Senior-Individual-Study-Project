@@ -5,11 +5,9 @@ from typing import List, Tuple, Any, Optional
 import pygame
 import numpy as np
 from math import sqrt
-from copy import deepcopy
 
 from library.config import km2pix, km2Li
-from library.data_io import uploading_directional_data, uploading_ground_truth
-from library.geometry import lcc_transformation
+from library.data_io import uploading_directional_data
 from MDS_model.directed_mds_model import unit_direction_dict  # 東/西/南/北/東南/… 的單位向量
 
 def wrong_directions_nonflip(pos_matrix, vertice, dni):
@@ -705,108 +703,3 @@ def animate_node_link_pygame(
 
     pygame.quit()
 
-# For stress majorization
-def procrustes_analysis_to_gt(flip, vertice, dni, refer_pos) :
-    """
-    Align positions (in Li) to ground truth (in km) using rotation/reflection Procrustes
-    about the anchor node '鄯善', and return pixel coordinates aligned so that the
-    anchor lands at `refer_pos`.
-    """
-    
-    # Basic validation
-    if not isinstance(refer_pos, (list, tuple)) or len(refer_pos) != 2:
-        raise ValueError("refer_pos must be a 2-element list/tuple like [x, y].")
-    if len(flip) != len(vertice):
-        raise ValueError("pos_matrix and vertice must have the same length.")
-
-    # Find the anchor index (first occurrence if duplicated)
-    try:
-        anchor_idx = dni["鄯善"]
-    except KeyError:
-        raise KeyError("Label '鄯善' not found in vertice.") from None
-
-    
-    # 1) Do Orthogonal Procrustes to best align with ground truth positions
-    ground_truth_positions = uploading_ground_truth(vertice,dni)
-    gt_xy_km = lcc_transformation(dni, ground_truth_positions)
-    
-    for i in range(len(gt_xy_km)) :
-        x, y = gt_xy_km[i]
-        if x is not None and y is not None :
-            gt_xy_km[i] = [x*km2pix, y*km2pix] # turn km to pix
-    
-    # 2) Remember the full pos_matrix
-    X_full = np.asarray(deepcopy(flip), dtype=float)
-    X_full -= X_full[anchor_idx]  # center at anchor
-    
-    # 3) There may be some nodes missing ground truth; filter them out
-    DeX = Deg = []
-    new_anc = 0
-    for i, (gtx, gty) in enumerate(gt_xy_km):
-        if gtx is not None and gty is not None:
-            DeX.append(flip[i])
-            Deg.append([gtx, gty])
-        if vertice[i] == "鄯善":
-            new_anc = len(DeX) - 1  # new index of anchor in filtered list
-    
-    flip = deepcopy(DeX)
-    gt_xy_km = deepcopy(Deg)
-    
-    X_px = np.asarray(flip, dtype=float)
-    G_px = np.asarray(gt_xy_km, dtype=float)
-    # Center both sets at the anchor (rotate about 鄯善)
-    X0 = X_px - X_px[new_anc]
-    G0 = G_px - G_px[new_anc]
-
-    #    Orthogonal Procrustes (rotation or reflection)
-    #    Minimize || X0 R - G0 ||_F, subject to R^T R = I, det(R) = +1
-    C = X0.T @ G0                      
-    U, _, Vt = np.linalg.svd(C)
-    R = U @ Vt
-
-    # Apply the R matrix (about the anchor), then translate so 鄯善 = refer_pos
-    X_rot = X_full @ R
-    aligned_pos = X_rot + np.asarray(refer_pos, dtype=float)
-
-    return aligned_pos.tolist()
-
-# For directed MDS
-def alignment_and_scaling(pos_matrix, vertice, dni, refer_pos):
-    """
-    Scale all coordinates by scale and translate so that the point labeled
-    '鄯善' matches refer_pos.
-    Raises ValueError
-    If '鄯善' is not found or refer_pos is invalid.
-    """
-    # Basic validation
-    if not isinstance(refer_pos, (list, tuple)) or len(refer_pos) != 2:
-        raise ValueError("refer_pos must be a 2-element list/tuple like [x, y].")
-    if len(pos_matrix) != len(vertice):
-        raise ValueError("pos_matrix and vertice must have the same length.")
-    
-    # Find the anchor index (first occurrence if duplicated)
-    try:
-        anchor_idx = dni["鄯善"]
-    except ValueError:
-        raise ValueError("Label '鄯善' not found in vertice.") from None
-
-    # 1) Scale by 1/10, turn Li to pixel
-    scale = 0.1
-    scaled = [[x * scale, y * scale] for x, y in pos_matrix]
-
-    # 2) Compute translation so '鄯善' lands at refer_pos
-    anchor_x, anchor_y = scaled[anchor_idx]
-    dx = refer_pos[0] - anchor_x
-    dy = refer_pos[1] - anchor_y
-
-    # 3) Apply translation to all points
-    aligned = [[x + dx, y + dy] for x, y in scaled]
-    
-    # Be aware of the y-axis direction is flipped in pygame
-    flip = flipping_y(aligned, height=750)
-
-    return flip
-
-def flipping_y(pos_matrix, height):
-    flipped = [[x, height - y] for x, y in pos_matrix]
-    return flipped
