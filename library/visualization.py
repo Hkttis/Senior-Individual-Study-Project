@@ -6,9 +6,9 @@ import numpy as np
 from copy import deepcopy
 
 from library.config import *
-from library.metrics import stress_function, calculate_kruskals_stress, procrustes_align_by_fixed_points
+from library.metrics import stress_function, calculate_kruskals_stress, procrustes_align_by_fixed_points, rmse_km_from_pixels
 from library.geometry import lcc_transformation
-from library.config import km2pix, km2Li
+from library.model_cmp import rmse_km_from_pixels
 
 
 def plotting_physics_simulation_animation_tmp(space, screen, draw_options,font, data, vertice, dni, pos_history):
@@ -452,6 +452,7 @@ def plot_three_model_convergence_pygame_pixelaware(
     stress_y_scale="log",           # "log" 或 "linear"
     bin_size_iters=10,              # ★ 以 iterations 分箱：可設 5、10、20
     band_alpha=38,                  # ★ 包絡帶透明度（~15%）
+    pre_process=False,              #  pos_history 是否事先經過轉 px 和 flipping
     save_path="C:/Users/justi/Desktop/project/results/ThreeModels_RMSE_Kruskal_pixelaware.png",
 ):
     """
@@ -521,26 +522,32 @@ def plot_three_model_convergence_pygame_pixelaware(
     def compute_rmse_series(pos_history, kind):
         series = []
         for P in pos_history:
-            sim_km = phys_px_to_km(P) if kind == "physics" else mds_li_to_km(P)
-            if kind == "strmds" :
-                P = procrustes_align_by_fixed_points(deepcopy(P), fixed_point_labels, fixed_point_lonlat, dni)
-            se = []
-            for i, (sx, sy) in enumerate(sim_km):
-                gx, gy = gt_xy_km[i]
-                if gx is None:  # 缺 GT
-                    continue
-                dx, dy = sx - gx, sy - gy
-                se.append(dx * dx + dy * dy)
-            series.append(math.sqrt(sum(se) / len(se)) if se else float("nan"))
+            if pre_process :
+                series.append( rmse_km_from_pixels(deepcopy(P), refer_pos, dni, ground_truth_positions) )
+            else :    
+                sim_km = phys_px_to_km(P) if kind == "physics" else mds_li_to_km(P)
+                if kind == "strmds" :
+                    P = procrustes_align_by_fixed_points(deepcopy(P), fixed_point_labels, fixed_point_lonlat, dni)
+                se = []
+                for i, (sx, sy) in enumerate(sim_km):
+                    gx, gy = gt_xy_km[i]
+                    if gx is None:  # 缺 GT
+                        continue
+                    dx, dy = sx - gx, sy - gy
+                    se.append(dx * dx + dy * dy)
+                series.append(math.sqrt(sum(se) / len(se)) if se else float("nan"))
         return series
 
     def compute_kruskal_series(pos_history, kind):
         series = []
         for P in pos_history:
-            if kind == "physics":
-                P_pix = deepcopy(P) if orientation == "pygame" else flipping_y(deepcopy(P), height=H)
-            else:
-                P_pix = mds_li_to_pixels_for_kruskal(P)
+            if pre_process :
+                P_pix = deepcopy(P)
+            else :    
+                if kind == "physics":
+                    P_pix = deepcopy(P) if orientation == "pygame" else flipping_y(deepcopy(P), height=H)
+                else:
+                    P_pix = mds_li_to_pixels_for_kruskal(P)
             ks = float(calculate_kruskals_stress(dni, deepcopy([list(q) for q in P_pix]), data))
             series.append(ks)
         return series
@@ -760,15 +767,17 @@ def plot_three_model_convergence_pygame_pixelaware(
 
     # --- 簡易圖例 ---
     def legend(x, y):
-        items = [("Physics", C_PH), ("Directed-MDS", C_DM), ("Stress-Maj", C_SM)]
+        items = [("Force-directed (our method)", C_PH), ("Vector MDS", C_DM), ("Stress-Majorization", C_SM)]
         dx = 0
         for label, col in items:
+            if col == C_DM :
+                dx += 100
             pygame.draw.line(screen, col, (x + dx, y), (x + dx + 20, y), 4)
             screen.blit(font.render(label, True, (0, 0, 0)), (x + dx + 30, y - 10))
-            dx += 140
+            dx += 130
 
-    legend(top.right - 400, top.top + 20  )
-    legend(bot.right - 400, bot.top + 20 )
+    legend(top.right - 550, top.top + 20  )
+    legend(bot.right - 550, bot.top + 20 )
 
     pygame.display.flip()
     if save_path:

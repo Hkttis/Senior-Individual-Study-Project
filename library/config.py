@@ -11,6 +11,10 @@ FILE_PATHS = {
     "save_vis_data" : "C:/Users/justi/Desktop/project/results_data/vis_data.csv",
     "save_bootstrap_data": "C:/Users/justi/Desktop/project/results_data/bootstrap_data.csv",
     "save_err_data" : "C:/Users/justi/Desktop/project/results_data/err_data.csv",
+    "save_all_pos_sm_px_data" : "C:/Users/justi/Desktop/project/results_data/all_pos_sm_px_data.csv",
+    "save_all_pos_dm_px_data" : "C:/Users/justi/Desktop/project/results_data/all_pos_dm_px_data.csv",
+    "save_all_pos_ph_px_data" : "C:/Users/justi/Desktop/project/results_data/all_pos_sm_ph_data.csv",
+    "ini_data" : "C:/Users/justi/Desktop/project/results_data/ini_data.csv"
 }
 
 # default force parameters (for bootstrap & normal runs)

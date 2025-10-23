@@ -149,6 +149,324 @@ def loading_err_data():
 
 
 
+
+
+# ======================= CSV Save/Load for Position Histories =======================
+import os, csv
+from collections import defaultdict
+from typing import List, Tuple, Optional
+
+try:
+    from library.config import FILE_PATHS
+except Exception:
+    FILE_PATHS = None
+
+_REQUIRED_KEYS = [
+    "save_all_pos_sm_px_data",
+    "save_all_pos_dm_px_data",
+    "save_all_pos_ph_px_data",
+]
+
+def _ensure_required_paths():
+    if FILE_PATHS is None:
+        raise RuntimeError("FILE_PATHS is not available. Ensure `from library.config import FILE_PATHS` is configured.")
+    missing = [k for k in _REQUIRED_KEYS if k not in FILE_PATHS]
+    if missing:
+        raise KeyError(f"Missing FILE_PATHS keys: {missing}. Please define these in library.config.")
+
+def _mkdir_parent(path: str) -> None:
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent and not os.path.exists(parent):
+        os.makedirs(parent, exist_ok=True)
+
+def _coerce_xy(val) -> Tuple[float, float]:
+    # Accept (x, y), [x, y], or small numpy arrays
+    x, y = val[0], val[1]
+    return float(x), float(y)
+
+def _write_model_csv(path: str,
+                     histories: List[List[List[Tuple[float, float]]]],
+                     vertice: Optional[List[str]],
+                     tag: str) -> Tuple[int, int, int]:
+    """
+    Write one model's histories to CSV in UTF-8-SIG.
+    Returns (n_runs, total_frames, total_rows) for logging.
+    """
+    _mkdir_parent(path)
+    n_runs = len(histories)
+    total_frames = 0
+    total_rows = 0
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(["run", "frame", "node_idx", "label", "x_px", "y_px"])
+        for run_idx, run in enumerate(histories):
+            for frame_idx, frame in enumerate(run):
+                total_frames += 1
+                for node_idx, pos in enumerate(frame):
+                    x, y = _coerce_xy(pos)
+                    label = vertice[node_idx] if vertice and node_idx < len(vertice) else ""
+                    w.writerow([run_idx, frame_idx, node_idx, label, x, y])
+                    total_rows += 1
+    print(f"[Saved CSV] {tag}: runs={n_runs}, frames(total)={total_frames}, rows={total_rows} → {path}")
+    return n_runs, total_frames, total_rows
+
+def save_all_pos_histories_px_csv(
+    all_pos_hist_sm_px: List[List[List[Tuple[float, float]]]],
+    all_pos_hist_dm_px: List[List[List[Tuple[float, float]]]],
+    all_pos_hist_ph_px: List[List[List[Tuple[float, float]]]],
+    *,
+    vertice: Optional[List[str]] = None,
+) -> None:
+    """
+    Save three models' per-run position histories in **pixel units** to CSV files.
+    CSV schema: run,frame,node_idx,label,x_px,y_px  (encoding='utf-8-sig')
+    """
+    _ensure_required_paths()
+    _write_model_csv(FILE_PATHS["save_all_pos_sm_px_data"], all_pos_hist_sm_px, vertice, "StressMajorization")
+    _write_model_csv(FILE_PATHS["save_all_pos_dm_px_data"], all_pos_hist_dm_px, vertice, "DirectedMDS")
+    _write_model_csv(FILE_PATHS["save_all_pos_ph_px_data"], all_pos_hist_ph_px, vertice, "PhysicsSim")
+
+def _read_model_csv(path: str) -> Tuple[List[List[List[Tuple[float, float]]]], Optional[List[str]]]:
+    """
+    Read one model's histories from CSV and reconstruct to [run][frame][(x,y)].
+    Returns (histories, labels) where labels is a list[str] (or None if not present).
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"CSV not found: {path}")
+
+    # temp store: run -> frame -> node_idx -> (x,y); also collect labels by node_idx
+    temp = defaultdict(lambda: defaultdict(dict))
+    node_labels: dict[int, str] = {}
+
+    with open(path, "r", newline="", encoding="utf-8-sig") as f:
+        r = csv.DictReader(f)
+        required = {"run", "frame", "node_idx", "x_px", "y_px"}
+        if not required.issubset(r.fieldnames or set()):
+            raise ValueError(f"CSV {path} missing required columns: {required - set(r.fieldnames or [])}")
+        has_label = "label" in (r.fieldnames or [])
+
+        for row in r:
+            run = int(row["run"])
+            frame = int(row["frame"])
+            node = int(row["node_idx"])
+            x = float(row["x_px"])
+            y = float(row["y_px"])
+            temp[run][frame][node] = (x, y)
+            if has_label:
+                lbl = row.get("label", "")
+                if lbl and node not in node_labels:
+                    node_labels[node] = lbl
+
+    # Rebuild nested list in sorted order
+    histories: List[List[List[Tuple[float, float]]]] = []
+    for run in sorted(temp.keys()):
+        frames_dict = temp[run]
+        run_list: List[List[Tuple[float, float]]] = []
+        for frame in sorted(frames_dict.keys()):
+            node_dict = frames_dict[frame]
+            if not node_dict:
+                run_list.append([])
+                continue
+            max_node = max(node_dict.keys())
+            frame_list = [None] * (max_node + 1)
+            for node, xy in node_dict.items():
+                frame_list[node] = xy
+            # sanity: ensure no None
+            if any(v is None for v in frame_list):
+                raise ValueError(f"Missing node positions in run={run}, frame={frame} reading {path}.")
+            run_list.append(frame_list)
+        histories.append(run_list)
+
+    labels = None
+    if node_labels:
+        # Convert to dense list by node index order
+        max_node = max(node_labels.keys())
+        labels = [node_labels.get(i, "") for i in range(max_node + 1)]
+
+    print(f"[Loaded CSV] runs={len(histories)}, frames(total)={sum(len(r) for r in histories)} ← {path}")
+    return histories, labels
+
+def load_all_pos_histories_px_csv(return_labels: bool = False):
+    """
+    Load the three models' histories from CSV (pixel units).
+    Returns
+    -------
+    (sm_hist, dm_hist, ph_hist)                    if return_labels=False
+    (sm_hist, dm_hist, ph_hist, labels)            if return_labels=True and labels available
+    Notes
+    -----
+    - If labels differ across files, the first non-empty label list is returned.
+    """
+    _ensure_required_paths()
+    p_sm = FILE_PATHS["save_all_pos_sm_px_data"]
+    p_dm = FILE_PATHS["save_all_pos_dm_px_data"]
+    p_ph = FILE_PATHS["save_all_pos_ph_px_data"]
+
+    sm_hist, sm_labels = _read_model_csv(p_sm)
+    dm_hist, dm_labels = _read_model_csv(p_dm)
+    ph_hist, ph_labels = _read_model_csv(p_ph)
+
+    labels = sm_labels or dm_labels or ph_labels
+    return (sm_hist, dm_hist, ph_hist, labels) if return_labels else (sm_hist, dm_hist, ph_hist)
+
+
+import csv
+import os
+from typing import List, Dict, Tuple
+
+EdgeRow     = List[str]                 # ["src","dst","w1","w2"]
+GraphGroup  = List[EdgeRow]             # group of edges
+GraphType   = List[GraphGroup]          # list of groups
+VertType    = List[str]                 # list of vertex names
+DniType     = Dict[str, int]            # name -> index
+EdgesSimple = List[Tuple[str, str]]     # list of (src, dst)
+DataType    = List[EdgeRow]             # flat list [["src","dst","w1","w2"], ...]
+
+
+def save_ini_data_to_csv(
+    FILE_PATHS: Dict[str, str],
+    graph: GraphType,
+    vertice: VertType,
+    dni: DniType,
+    edges: EdgesSimple,
+    data: DataType,
+) -> None:
+    """
+    Save graph, vertice, dni, edges, data into ONE CSV at FILE_PATHS["ini_data"].
+    Encoding: utf-8-sig. Sections are written strictly in this order:
+        GRAPH -> VERTICE -> DNI -> EDGES -> DATA
+    """
+    out_path = FILE_PATHS["ini_data"]
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+    # Fixed wide schema; leave unused cells empty to keep CSV simple.
+    fieldnames = ["section", "group_id", "name", "index", "src", "dst", "w1", "w2"]
+
+    with open(out_path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+
+        # 1) GRAPH (keep group order; keep edge order inside each group)
+        #    We record group_id to reconstruct the nested structure.
+        for gid, group in enumerate(graph):
+            for row in group:
+                src, dst, w1, w2 = row
+                w.writerow({
+                    "section": "GRAPH",
+                    "group_id": gid,
+                    "name": "", "index": "",
+                    "src": src, "dst": dst, "w1": w1, "w2": w2
+                })
+
+        # 2) VERTICE (preserve exact order as provided)
+        for name in vertice:
+            w.writerow({
+                "section": "VERTICE",
+                "group_id": "",
+                "name": name, "index": "",
+                "src": "", "dst": "", "w1": "", "w2": ""
+            })
+
+        # 3) DNI (authoritative mapping, write exactly as provided; order preserved)
+        for name, idx in dni.items():
+            w.writerow({
+                "section": "DNI",
+                "group_id": "",
+                "name": name, "index": idx,
+                "src": "", "dst": "", "w1": "", "w2": ""
+            })
+
+        # 4) EDGES (verbatim)
+        for (src, dst) in edges:
+            w.writerow({
+                "section": "EDGES",
+                "group_id": "",
+                "name": "", "index": "",
+                "src": src, "dst": dst, "w1": "", "w2": ""
+            })
+
+        # 5) DATA (verbatim; this is a single flat list, NOT grouped)
+        for src, dst, w1, w2 in data:
+            w.writerow({
+                "section": "DATA",
+                "group_id": "",
+                "name": "", "index": "",
+                "src": src, "dst": dst, "w1": w1, "w2": w2
+            })
+
+
+def load_ini_data_from_csv(
+    FILE_PATHS: Dict[str, str],
+) -> Tuple[GraphType, VertType, DniType, EdgesSimple, DataType]:
+    """
+    Load CSV at FILE_PATHS["ini_data"] and reconstruct:
+        graph, vertice, dni, edges, data
+    Exactness guarantees:
+      - DATA rows are returned exactly as stored (order & strings).
+      - EDGES rows are returned exactly as stored.
+      - VERTICE list preserves file order (which equals the original order we wrote).
+      - DNI mapping is taken exactly from the file rows.
+      - GRAPH groups are rebuilt by ascending group_id, preserving edge order per group.
+    """
+    in_path = FILE_PATHS["ini_data"]
+
+    graph_groups: Dict[int, GraphGroup] = {}
+    vertice: VertType = []
+    dni: DniType = {}
+    edges: EdgesSimple = []
+    data: DataType = []
+
+    with open(in_path, "r", encoding="utf-8-sig", newline="") as f:
+        r = csv.DictReader(f)
+        for row in r:
+            section = row.get("section", "")
+            # DO NOT strip(), to preserve any user-supplied spaces inside names.
+
+            if section == "GRAPH":
+                gid_raw = row.get("group_id", "")
+                try:
+                    gid = int(gid_raw)
+                except Exception:
+                    # If a GRAPH row lacks a valid gid, skip it rather than corrupting structure
+                    continue
+                src = row.get("src", ""); dst = row.get("dst", "")
+                w1  = row.get("w1",  ""); w2  = row.get("w2",  "")
+                graph_groups.setdefault(gid, []).append([src, dst, w1, w2])
+
+            elif section == "VERTICE":
+                name = row.get("name", "")
+                vertice.append(name)
+
+            elif section == "DNI":
+                name = row.get("name", "")
+                idx  = row.get("index", "")
+                try:
+                    dni[name] = int(idx)
+                except Exception:
+                    # keep as-is if malformed? safer to skip bad rows
+                    continue
+
+            elif section == "EDGES":
+                src = row.get("src", ""); dst = row.get("dst", "")
+                edges.append((src, dst))
+
+            elif section == "DATA":
+                src = row.get("src", ""); dst = row.get("dst", "")
+                w1  = row.get("w1",  ""); w2  = row.get("w2",  "")
+                data.append([src, dst, w1, w2])
+
+            else:
+                # Unknown section—ignore silently
+                pass
+
+    # Rebuild graph as a list ordered by group_id
+    graph: GraphType = [graph_groups[k] for k in sorted(graph_groups.keys())]
+
+    return graph, vertice, dni, edges, data
+
+
+
+
 '''
 # data output
 def turnto_csv(vertice,pos_matrix) :

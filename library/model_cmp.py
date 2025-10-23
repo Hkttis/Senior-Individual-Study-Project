@@ -2,7 +2,7 @@ from copy import deepcopy
 
 from library.geometry import *
 from library.metrics import *
-from library.config import km2pix, km2Li
+from library.config import km2pix, km2Li, FILE_PATHS
 from library.data_io import uploading_ground_truth
 from library.visualization import *
 from library.physics import *
@@ -21,7 +21,7 @@ def run_directed_MDS( vis = True ):
     "C:\\Users\\justi\Desktop\\project\\csv doc utf8\\GPT-4_後漢書_numerals_utf8.csv"]
     pre_data = read_csvfile(datanum)
     c_data,disset = data_process(pre_data)
-    graph,vertice,dni,edges,data= Chen_csv_and_graph()
+    graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
     pos_matrix, stress_history, pos_history = directed_MDS(c_data,data,graph,vertice,dni,edges)
     
     if vis == True :
@@ -54,7 +54,7 @@ def run_directed_MDS( vis = True ):
     return pos_history
 
 def run_stress_majorization( vis = True ):
-    graph,vertice,dni,edges,data= Chen_csv_and_graph()
+    graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
     pos_matrix, stress_history, pos_history = stress_majorization(graph,dni,vertice,edges)
     
     if vis == True :
@@ -78,9 +78,9 @@ def run_stress_majorization( vis = True ):
     
     return pos_history
 
-def run_physics_simulation_model( vis = True) :
+def run_physics_simulation_model( fixed_point_labels, fixed_points_lonlat, vis = True) :
     refer_pos = [600,500]
-    vertice,dni,data,pos_matrix,fixed_positions_list = generate_CHEN_initial_positions(deepcopy(refer_pos))
+    vertice,dni,data,pos_matrix,fixed_positions_list = generate_CHEN_initial_positions(deepcopy(refer_pos), fixed_point_labels, fixed_points_lonlat)
     
     directional_data = uploading_directional_data()
     wrong_direction_lists,stress_history,pos_history,pos_matrix = main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,SPRING_STIFFNESS_BASE,REPULSION_STRENGTH_BASE,DIRECTIONAL_FORCE_MAGNITUDE_BASE, plot = vis)
@@ -101,26 +101,6 @@ def run_physics_simulation_model( vis = True) :
 
 
 # Compute the benchmark of three models
-
-def _rmse_km_from_pixels(pos_px, refer_pos, dni, gt_lonlat):
-    """
-    Compute RMSE (km) between pixel positions and LCC-projected ground truth.
-    - pos_px: list[(x,y)] in pixels, with 鄯善 expected near refer_pos.
-    - refer_pos: (x0,y0) in pixels.
-    """
-    # 1) sim px -> km anchored at refer_pos
-    sx_km = [((x - refer_pos[0]) / km2pix, (y - refer_pos[1]) / km2pix) for (x, y) in pos_px]
-    # 2) project GT lon/lat -> LCC (km), anchor at 鄯善 with north-up convention
-    gt_km = lcc_transformation(dni, gt_lonlat)  # returns list[(x,y) or (None,None)]
-    # 3) RMSE over nodes with GT
-    se = []
-    for i, (sx, sy) in enumerate(sx_km):
-        gx, gy = gt_km[i]
-        if gx is None or gy is None:
-            continue
-        dx, dy = sx - gx, sy - gy
-        se.append(dx * dx + dy * dy)
-    return math.sqrt(sum(se) / len(se)) if se else float("nan")
 
 def _align_history_stress_mj(pos_history_li, vertice, dni, refer_pos, fixed_point_labels, fixed_point_lonlat):
     """Li→px via alignment_and_scaling, then Procrustes by fixed points (px→px)."""
@@ -174,7 +154,7 @@ def _series_stats(x):
     ci_hi = mean + t975 * se if n > 1 else float("nan")
     return dict(n=n, mean=mean, sd=sd, se=se, t975=t975, ci_lo=ci_lo, ci_hi=ci_hi)
 
-def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), *, verbose: bool = True):
+def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_point_labels = [], fixed_point_lonlat = [], *, verbose: bool = True):
     """
     Repeat-measurement benchmark for three models with vis=False.
     - Prints progress "run i/n" and returns a dict with summary statistics and running-mean histories.
@@ -183,10 +163,6 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), *, verb
     # Static data (same across runs)
     graph, vertice, dni, edges, data = Chen_csv_and_graph()
     gt_lonlat = uploading_ground_truth(vertice, dni)
-
-    # Fixed points for SM Procrustes (you may change this set)
-    fixed_point_labels = ["鄯善", "都護治/烏壘"]
-    fixed_point_lonlat = [tuple(gt_lonlat[dni[name]]) for name in fixed_point_labels]
 
     # Running means of histories (in pixel units)
     mean_hist_sm = None
@@ -197,32 +173,39 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), *, verb
     ks_sm, rmse_sm = [], []
     ks_dm, rmse_dm = [], []
     ks_ph, rmse_ph = [], []
+    
+    all_pos_hist_sm_px = []
+    all_pos_hist_dm_px = []
+    all_pos_hist_ph_px = []
 
     for i in range(n_runs):
         # ---------------- Stress Majorization ----------------
         pos_hist_sm_li = run_stress_majorization(vis=False)                  # history in Li units
         pos_hist_sm_px = _align_history_stress_mj(pos_hist_sm_li, vertice, dni, refer_pos,
                                                   fixed_point_labels, fixed_point_lonlat)
+        all_pos_hist_sm_px.append(pos_hist_sm_px)
         mean_hist_sm = _running_mean_history(mean_hist_sm, pos_hist_sm_px, i)
         last_sm = deepcopy(pos_hist_sm_px[-1])
         ks_sm.append(float(calculate_kruskals_stress(dni, deepcopy([list(p) for p in last_sm]), data)))
-        rmse_sm.append(_rmse_km_from_pixels(last_sm, refer_pos, dni, gt_lonlat))
+        rmse_sm.append(rmse_km_from_pixels(last_sm, refer_pos, dni, gt_lonlat))
 
         # ---------------- Directed MDS -----------------------
         pos_hist_dm_li = run_directed_MDS(vis=False)                          # history in Li units
         pos_hist_dm_px = _align_history_directed_mds(pos_hist_dm_li, vertice, dni, refer_pos)
+        all_pos_hist_dm_px.append(pos_hist_dm_px)
         mean_hist_dm = _running_mean_history(mean_hist_dm, pos_hist_dm_px, i)
         last_dm = deepcopy(pos_hist_dm_px[-1])
         ks_dm.append(float(calculate_kruskals_stress(dni, deepcopy([list(p) for p in last_dm]), data)))
-        rmse_dm.append(_rmse_km_from_pixels(last_dm, refer_pos, dni, gt_lonlat))
+        rmse_dm.append(rmse_km_from_pixels(last_dm, refer_pos, dni, gt_lonlat))
 
         # ---------------- Physics Simulation ----------------
-        pos_hist_ph_px = run_physics_simulation_model(vis=False)              # history already in pixels
+        pos_hist_ph_px = run_physics_simulation_model(fixed_point_labels, fixed_point_lonlat, vis = False)              # history already in pixels
         pos_hist_ph_px = _align_history_physics(pos_hist_ph_px)
+        all_pos_hist_ph_px.append(pos_hist_ph_px)
         mean_hist_ph = _running_mean_history(mean_hist_ph, pos_hist_ph_px, i)
         last_ph = deepcopy(pos_hist_ph_px[-1])
         ks_ph.append(float(calculate_kruskals_stress(dni, deepcopy([list(p) for p in last_ph]), data)))
-        rmse_ph.append(_rmse_km_from_pixels(last_ph, refer_pos, dni, gt_lonlat))
+        rmse_ph.append(rmse_km_from_pixels(last_ph, refer_pos, dni, gt_lonlat))
 
         if verbose:
             print(f"[Progress] Completed {i+1}/{n_runs} runs")
@@ -269,5 +252,97 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), *, verb
             "Kruskal": {"SM": ks_sm, "DM": ks_dm, "PH": ks_ph},
             "RMSE_km": {"SM": rmse_sm, "DM": rmse_dm, "PH": rmse_ph},
         },
+        "all_pos_history_px": {
+            "StressMajorization": all_pos_hist_sm_px,
+            "DirectedMDS": all_pos_hist_dm_px,
+            "PhysicsSim": all_pos_hist_ph_px,
+        },
     }
+
+
+from typing import Callable, List, Tuple, Optional
+import math
+
+Pos = List[float]                 # [x, y]
+PosMatrix = List[Pos]             # [[x1,y1], [x2,y2], ...]
+PosHistory = List[PosMatrix]      # [pos_matrix_iter1, pos_matrix_iter2, ...]
+AllRuns = List[PosHistory]        # [pos_history_run0, pos_history_run1, ...]
+
+
+def select_median_pos_history(
+    all_pos_his_data: AllRuns,
+    dni,
+    ground_truth_positions,
+    refer_pos,
+    *,
+    median_policy: str = "lower",      # "lower" | "upper" | "nearest"
+    return_meta: bool = False
+) -> PosHistory | Tuple[PosHistory, int, float]:
+    """
+    Select the pos_history whose FINAL pos_matrix RMSE is the median among runs.
+
+    Parameters
+    ----------
+    all_pos_his_data : list of runs; each run is a list of pos_matrix over iterations.
+    median_policy    : 
+        - "lower"  : lower median order statistic (index floor((n-1)/2))
+        - "upper"  : upper median order statistic (index ceil((n-1)/2))
+        - "nearest": pick run whose RMSE is closest to the numeric median 
+                     (for even n, median = average of two middle RMSEs);
+                     ties resolved by smaller RMSE then smaller run index.
+    return_meta      : if True, also return (run_index, final_rmse).
+
+    Returns
+    -------
+    pos_history  (and optionally: run_index, final_rmse)
+    
+    """
+    
+    
+    if not isinstance(all_pos_his_data, list) or len(all_pos_his_data) == 0:
+        raise ValueError("all_pos_his_data must be a non-empty list of pos_history runs.")
+
+    # 1) Compute final RMSE per run
+    rmses: List[float] = []
+    for r, pos_hist in enumerate(all_pos_his_data):
+        if not pos_hist:
+            raise ValueError(f"Run #{r} has empty pos_history.")
+        final_pos: PosMatrix = pos_hist[-1]
+        rmse_val = float(rmse_km_from_pixels(final_pos, refer_pos, dni, ground_truth_positions))
+        if not (math.isfinite(rmse_val)):
+            raise ValueError(f"Non-finite RMSE at run #{r}: {rmse_val!r}")
+        rmses.append(rmse_val)
+
+    n = len(rmses)
+    # Prepare (rmse, index) pairs for order-statistic selection
+    order = sorted([(rm, idx) for idx, rm in enumerate(rmses)], key=lambda p: (p[0], p[1]))
+
+    # 2) Choose the median index according to policy
+    if median_policy.lower() == "lower":
+        k = (n - 1) // 2
+        chosen_rm, chosen_idx = order[k]
+    elif median_policy.lower() == "upper":
+        k = n // 2
+        chosen_rm, chosen_idx = order[k]
+    elif median_policy.lower() == "nearest":
+        # numeric median (average of two middles when n is even)
+        if n % 2 == 1:
+            numeric_median = order[(n - 1) // 2][0]
+        else:
+            numeric_median = 0.5 * (order[n // 2 - 1][0] + order[n // 2][0])
+        # pick closest; tie-break by smaller RMSE then smaller index
+        chosen_rm, chosen_idx = min(
+            ((rm, idx) for idx, rm in enumerate(rmses)),
+            key=lambda p: (abs(p[0] - numeric_median), p[0], p[1])
+        )
+    else:
+        raise ValueError("median_policy must be one of: 'lower', 'upper', 'nearest'.")
+
+    # 3) Return the selected full pos_history (and optional meta)
+    selected_history = all_pos_his_data[chosen_idx]
+    if return_meta:
+        return selected_history, chosen_idx, chosen_rm
+    return selected_history
+
+
 

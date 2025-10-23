@@ -17,14 +17,14 @@ def stress_function(data,dni,pos_matrix) :
     return stress
 
 def calculate_kruskals_stress(dni,pos_matrix,data) :
+    tmp_pos_matrix = []
     for pos_pair in pos_matrix : # transform the pixel unit to km 
-        pos_pair[0] = pos_pair[0] / km2pix
-        pos_pair[1] = pos_pair[1] / km2pix
+        tmp_pos_matrix.append( (pos_pair[0] / km2pix, pos_pair[1] / km2pix) )
     error_square = 0
     dis_square = 0
     for row in data :
-        p1 = pos_matrix[dni[row[0]]]
-        p2 = pos_matrix[dni[row[1]]]
+        p1 = tmp_pos_matrix[dni[row[0]]]
+        p2 = tmp_pos_matrix[dni[row[1]]]
         actual_dis = np.sqrt( (p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
         ideal_dis = float(row[2]) / km2Li
         error_square += (actual_dis-ideal_dis)**2
@@ -209,24 +209,42 @@ def alignment_and_scaling(pos_matrix, vertice, dni, refer_pos):
     # 1) Scale by 1/10, turn Li to pixel
     scale = 0.1
     scaled = [[x * scale, y * scale] for x, y in pos_matrix]
+    
+    # Be aware of the y-axis direction is flipped in pygame
+    flip = flipping_y(scaled, height=750)
 
     # 2) Compute translation so '鄯善' lands at refer_pos
-    anchor_x, anchor_y = scaled[anchor_idx]
+    anchor_x, anchor_y = flip[anchor_idx]
     dx = refer_pos[0] - anchor_x
     dy = refer_pos[1] - anchor_y
 
     # 3) Apply translation to all points
-    aligned = [[x + dx, y + dy] for x, y in scaled]
+    aligned = [[x + dx, y + dy] for x, y in flip]
     
-    # Be aware of the y-axis direction is flipped in pygame
-    flip = flipping_y(aligned, height=750)
+    
 
-    return flip
+    return aligned
 
 def flipping_y(pos_matrix, height):
     flipped = [[x, height - y] for x, y in pos_matrix]
     return flipped
 
-
-
-
+def rmse_km_from_pixels(pos_px, refer_pos, dni, gt_lonlat):
+    """
+    Compute RMSE (km) between pixel positions and LCC-projected ground truth.
+    - pos_px: list[(x,y)] in pixels, with 鄯善 expected near refer_pos.
+    - refer_pos: (x0,y0) in pixels.
+    """
+    # 1) sim px -> km anchored at refer_pos
+    sx_km = [((x - refer_pos[0]) / km2pix, (y - refer_pos[1]) / km2pix) for (x, y) in pos_px]
+    # 2) project GT lon/lat -> LCC (km), anchor at 鄯善 with north-up convention
+    gt_km = lcc_transformation(dni, gt_lonlat)  # returns list[(x,y) or (None,None)]
+    # 3) RMSE over nodes with GT
+    se = []
+    for i, (sx, sy) in enumerate(sx_km):
+        gx, gy = gt_km[i]
+        if gx is None or gy is None:
+            continue
+        dx, dy = sx - gx, sy - gy
+        se.append(dx * dx + dy * dy)
+    return math.sqrt(sum(se) / len(se)) if se else float("nan")
