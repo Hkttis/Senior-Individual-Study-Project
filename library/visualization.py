@@ -4,11 +4,12 @@ import os
 from math import *
 import numpy as np
 from copy import deepcopy
+from typing import List, Tuple, Optional
+
 
 from library.config import *
 from library.metrics import stress_function, calculate_kruskals_stress, procrustes_align_by_fixed_points, rmse_km_from_pixels
 from library.geometry import lcc_transformation
-from library.model_cmp import rmse_km_from_pixels
 
 
 def plotting_physics_simulation_animation_tmp(space, screen, draw_options,font, data, vertice, dni, pos_history):
@@ -301,39 +302,34 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
     
     return errors, edge_labels
 
-def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos, pos_matrix, file_name):
+def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_pos, pos_matrix, file_name):
     """
-    1. 將 pos_matrix 轉成 km , 並以 refer_pos (鄯善) 為 (0,0)
-    2. 用 lcc_transformation 取得 ground truth 的 km 座標
-    3. 計算每點誤差與 RMSE
-    4. 用 Pygame 繪製 overlay 底圖為 gt, 疊圖為模擬結果
+    1) Convert pos_matrix (pixels) to km relative to refer_pos (鄯善 at 0,0).
+    2) Project ground-truth lon/lat with LCC to km.
+    3) Compute per-node errors & RMSE.
+    4) Pygame overlay:
+       - base = ground truth nodes (light gray) + light gray labels
+       - overlay = simulated nodes (colored by error) + labels
+       - NEW: faint lines from sim point to its ground-truth partner
     """
-    
-    # 1. 模擬結果轉 km 並對齊
-    sim_xy_km = []
-    for x, y in pos_matrix:
-        x_km = (x - refer_pos[0]) / km2pix
-        y_km = (y - refer_pos[1]) / km2pix
-        sim_xy_km.append((x_km, y_km))
+    # --- 1) Sim to km (anchor at refer_pos) ---
+    sim_xy_km = [((x - refer_pos[0]) / km2pix, (y - refer_pos[1]) / km2pix) for (x, y) in pos_matrix]
 
-    # 2. ground truth 投影
+    # --- 2) Ground truth (km) ---
     gt_xy_km = lcc_transformation(dni, ground_truth_positions)
-    
-    # 3. 計算誤差與 RMSE
-    errors = []
-    valid_idx = []
-    for i, (sx, sy) in enumerate(sim_xy_km):
-        gt = gt_xy_km[i]
-        if gt[0] is None:  # 無 GT
-            continue
-        gx, gy = gt
-        err = math.hypot(sx - gx, sy - gy)
-        errors.append(err)
-        valid_idx.append(i)
-    max_error = max(errors)
-    rmse = math.sqrt(np.mean(np.square(errors)))
 
-    # 4. Pygame 疊圖設定
+    # --- 3) Errors / RMSE (km) ---
+    errors, valid_idx = [], []
+    for i, (sx, sy) in enumerate(sim_xy_km):
+        gx, gy = gt_xy_km[i]
+        if gx is None:
+            continue
+        errors.append(math.hypot(sx - gx, sy - gy))
+        valid_idx.append(i)
+    max_error = max(errors) if errors else 0.0
+    rmse = math.sqrt(np.mean(np.square(errors))) if errors else float("nan")
+
+    # --- 4) Pygame canvas ---
     pygame.init()
     width, height = 1200, 750
     screen = pygame.display.set_mode((width, height))
@@ -341,91 +337,128 @@ def ground_truth_comparison(vertice,dni,data, ground_truth_positions, refer_pos,
     font = pygame.font.SysFont("Microsoft YaHei", 20)
     big_font = pygame.font.SysFont("Microsoft YaHei", 30)
     screen.fill((255, 255, 255))
-    title_surf = big_font.render("Overlay: Physics Simulation vs Ground Truth", True, (0, 0, 0))
-    screen.blit(title_surf, (width//2 - title_surf.get_width()//2, 20))
 
-    # 平移 + 縮放
+    title_surf = big_font.render("Overlay: Physics Simulation vs Ground Truth", True, (0, 0, 0))
+    screen.blit(title_surf, (width // 2 - title_surf.get_width() // 2, 20))
+
+    # Display parameters (keep your look & feel)
     offset_x, offset_y = 700, 500
     scale = 1.2 * km2pix
 
-    # 5. 畫底圖：Ground Truth（單一灰色）
-    special = { dni['鄯善'], dni['都護治/烏壘'] }
+    # --- Precompute screen coords for GT and Simulation ---
+    gt_screen = [None] * len(vertice)
     for i, (gx, gy) in enumerate(gt_xy_km):
-        if gx is None: continue
-        dx = int(gx * scale + offset_x)
-        dy = int(gy * scale + offset_y)
-        if i in special:
-            color = (100, 100, 100)   # 深灰
-            r = 10
-        else:
-            color = (200, 200, 200)   # 淺灰
-            r = 5
-        pygame.draw.circle(screen, color, (dx, dy), 5)
+        if gx is None:
+            continue
+        gt_screen[i] = (int(gx * scale + offset_x), int(gy * scale + offset_y))
 
-    ## 避免標籤碰撞
-    # 紀錄已放置文字的位置區塊
+    sim_screen = [None] * len(vertice)
+    for i, (sx, sy) in enumerate(sim_xy_km):
+        sim_screen[i] = (int(sx * scale + offset_x), int(sy * scale + offset_y))
+
+    # --- 5) Draw Ground Truth nodes (light gray) ---
+    special = {dni.get('鄯善'), dni.get('都護治/烏壘')}
+    for i, p in enumerate(gt_screen):
+        if p is None:
+            continue
+        dx, dy = p
+        if i in special:
+            color, r = (100, 100, 100), 10
+        else:
+            color, r = (200, 200, 200), 5
+        pygame.draw.circle(screen, color, (dx, dy), r)
+
+    # --- 5a) NEW: Ground Truth labels (light gray) ---
+    # Reuse a shared used_boxes so sim labels avoid overlapping GT labels.
     used_boxes = []
     padding = 15
-    # 嘗試避開擁擠：最多嘗試 9*4 個方向
-    offset_candidates = [ (10, -10), (12, 0), (10, 10), (0, 15), (-10, 10), (-12, 0),  
-        (-10, -10), (0, -15), (15, -3), (-15, 5) ]
-    for i in range(3) :
-        k=1.5+i*0.5
-        for j in range(9) :
-            offset_candidates.append((k*offset_candidates[j][0],k*offset_candidates[j][1]))
-    
-    # 6. 畫疊圖：Simulation（色階 + 標籤）
+    offset_candidates = [(10, -10), (12, 0), (10, 10), (0, 15), (-10, 10), (-12, 0),
+                         (-10, -10), (0, -15), (15, -3), (-15, 5)]
+    for k in range(3):
+        s = 1.5 + 0.5 * k
+        for j in range(9):
+            dx, dy = offset_candidates[j]
+            offset_candidates.append((s * dx, s * dy))
+
+    light_text_color = (130, 130, 130)  # lighter than simulation labels
+    for i, p in enumerate(gt_screen):
+        if p is None:
+            continue
+        gx, gy = p
+        label = vertice[i]
+        text_surface = font.render(label, True, light_text_color)
+        placed = False
+        for dx, dy in offset_candidates:
+            tx, ty = gx + dx, gy + dy
+            rect = text_surface.get_rect(topleft=(tx, ty))
+            padded = pygame.Rect(tx, ty, rect.width + 2 * padding, rect.height + 2 * padding)
+            if not any(padded.colliderect(pygame.Rect(bx, by, bw, bh)) for bx, by, bw, bh in used_boxes):
+                screen.blit(text_surface, (tx, ty))
+                used_boxes.append((padded.left, padded.top, padded.width, padded.height))
+                placed = True
+                break
+        if not placed:
+            # Fall back: draw right above the point
+            screen.blit(text_surface, (gx + 8, gy - 12))
+
+    # --- 6) NEW: Faint connectors from sim → GT (semi-transparent) ---
+    overlay = pygame.Surface((width, height), pygame.SRCALPHA)
+    connector_rgba = (60, 60, 60, 90)  # dark gray, ~35% opacity
+    for idx in valid_idx:
+        p_sim = sim_screen[idx]
+        p_gt  = gt_screen[idx]
+        if p_sim is None or p_gt is None:
+            continue
+        pygame.draw.line(overlay, connector_rgba, p_sim, p_gt, 2)
+    screen.blit(overlay, (0, 0))
+
+    # --- 7) Draw Simulation nodes + labels (colored by error) ---
+    #     Share used_boxes with GT labels so they don't overlap.
     for idx, err in zip(valid_idx, errors):
-        sx, sy = sim_xy_km[idx]
-        x = int(sx * scale + offset_x)
-        y = int(sy * scale + offset_y)
-        # 色階：0→藍, max→紅
-        t = min(err / max_error, 1.0)
+        x, y = sim_screen[idx]
+        t = 0.0 if max_error <= 0 else min(err / max_error, 1.0)  # 0→blue, 1→red
         color = (int(255 * t), 0, int(255 * (1 - t)))
         pygame.draw.circle(screen, color, (x, y), 6)
-        # 國家標籤
+
         label = vertice[idx]
-        for j,(dx, dy) in enumerate(offset_candidates):
-            tx = x + dx
-            ty = y + dy
-            text_surface = font.render(label, True, (0, 0, 0))
-            text_rect = text_surface.get_rect(topleft=(tx, ty))
-            # 檢查是否與已用區域重疊
-            overlap = any(text_rect.colliderect(pygame.Rect(bx, by, bw, bh)) for bx, by, bw, bh in used_boxes)
-            if (not overlap) :
+        text_surface = font.render(label, True, (0, 0, 0))
+        placed = False
+        for dx, dy in offset_candidates:
+            tx, ty = x + dx, y + dy
+            rect = text_surface.get_rect(topleft=(tx, ty))
+            padded = pygame.Rect(tx, ty, rect.width + 2 * padding, rect.height + 2 * padding)
+            if not any(padded.colliderect(pygame.Rect(bx, by, bw, bh)) for bx, by, bw, bh in used_boxes):
                 screen.blit(text_surface, (tx, ty))
-                used_boxes.append((tx, ty, text_rect.width+2*padding, text_rect.height+2*padding))
+                used_boxes.append((padded.left, padded.top, padded.width, padded.height))
+                placed = True
                 break
-    
-    
+        if not placed:
+            screen.blit(text_surface, (x + 8, y - 12))
 
-
-    # 7. 畫色階圖例（右下角）
+    # --- 8) Colorbar & metrics (unchanged) ---
     bar_h, bar_w = 200, 20
     bx, by = width - 60, height - bar_h - 40
     for i in range(bar_h):
         t = i / bar_h
         c = (int(255 * t), 0, int(255 * (1 - t)))
         pygame.draw.line(screen, c, (bx, by + bar_h - i), (bx + bar_w, by + bar_h - i))
-    screen.blit(font.render("0", True, (0,0,0)), (bx - 40, by + bar_h - 10))
-    screen.blit(font.render(f"{max_error:.2f}", True, (0,0,0)), (bx - 80, by - 10))
-    screen.blit(font.render("Error (km)", True, (0,0,0)), (bx - 100, by - 40))
+    screen.blit(font.render("0", True, (0, 0, 0)), (bx - 40, by + bar_h - 10))
+    screen.blit(font.render(f"{max_error:.2f}", True, (0, 0, 0)), (bx - 80, by - 10))
+    screen.blit(font.render("Error (km)", True, (0, 0, 0)), (bx - 100, by - 40))
 
-    # 8. 顯示 RMSE、kruskal's stress（右上角）
     rmse_surf = font.render(f"RMSE = {rmse:.3f} km", True, (0, 0, 0))
     screen.blit(rmse_surf, (width - rmse_surf.get_width() - 20, 30))
-    
-    kruskal_stress = calculate_kruskals_stress(dni,deepcopy(pos_matrix),data)
+
+    kruskal_stress = calculate_kruskals_stress(dni, deepcopy(pos_matrix), data)
     kru_surf = font.render(f"kruskal's stress = {kruskal_stress:.4f}", True, (0, 0, 0))
     screen.blit(kru_surf, (width - kru_surf.get_width() - 20, 80))
 
-    # 9. 更新畫面並存檔
+    # --- 9) Save & wait ---
     pygame.display.flip()
     save_path = f"C:/Users/justi/Desktop/project/results/{file_name}Overlap.png"
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     pygame.image.save(screen, save_path)
 
-    # 等待關閉
     running = True
     while running:
         for e in pygame.event.get():
@@ -450,7 +483,8 @@ def plot_three_model_convergence_pygame_pixelaware(
     anchor_label="鄯善",
     orientation="pygame",           # "pygame" (y-down) 或 "north-up"
     stress_y_scale="log",           # "log" 或 "linear"
-    bin_size_iters=10,              # ★ 以 iterations 分箱：可設 5、10、20
+    bin_size_iters_dm=10,
+    bin_size_iters_sm=25, # ★ 以 iterations 分箱：可設 5、10、20
     band_alpha=38,                  # ★ 包絡帶透明度（~15%）
     pre_process=False,              #  pos_history 是否事先經過轉 px 和 flipping
     save_path="C:/Users/justi/Desktop/project/results/ThreeModels_RMSE_Kruskal_pixelaware.png",
@@ -527,7 +561,7 @@ def plot_three_model_convergence_pygame_pixelaware(
             else :    
                 sim_km = phys_px_to_km(P) if kind == "physics" else mds_li_to_km(P)
                 if kind == "strmds" :
-                    P = procrustes_align_by_fixed_points(deepcopy(P), fixed_point_labels, fixed_point_lonlat, dni)
+                    sim_km = procrustes_align_by_fixed_points(deepcopy(P), fixed_point_labels, fixed_point_lonlat, dni)
                 se = []
                 for i, (sx, sy) in enumerate(sim_km):
                     gx, gy = gt_xy_km[i]
@@ -738,7 +772,7 @@ def plot_three_model_convergence_pygame_pixelaware(
     # --- clear & title ---
     screen.fill((255, 255, 255))
     title = title_font.render(
-        f"Convergence (Binned={bin_size_iters}): Kruskal's Stress & RMSE",
+        f"Convergence: Kruskal's Stress & RMSE",
         True, (0, 0, 0)
     )
     screen.blit(title, (W // 2 - title.get_width() // 2, 20))
@@ -762,8 +796,8 @@ def plot_three_model_convergence_pygame_pixelaware(
     draw_binned_band_and_median(top, xs_sm, ks_sm, mapY_top, C_SM, bin_size_iters_zero, alpha=band_alpha, median_width=2)
 
     draw_binned_band_and_median(bot, xs_ph, rmse_ph, map_rmse_y, C_PH, bin_size_iters_zero, alpha=band_alpha, median_width=2)
-    draw_binned_band_and_median(bot, xs_dm, rmse_dm, map_rmse_y, C_DM, bin_size_iters, alpha=band_alpha, median_width=2)
-    draw_binned_band_and_median(bot, xs_sm, rmse_sm, map_rmse_y, C_SM, bin_size_iters_zero, alpha=band_alpha, median_width=2)
+    draw_binned_band_and_median(bot, xs_dm, rmse_dm, map_rmse_y, C_DM, bin_size_iters_dm, alpha=band_alpha, median_width=2)
+    draw_binned_band_and_median(bot, xs_sm, rmse_sm, map_rmse_y, C_SM, bin_size_iters_sm, alpha=band_alpha, median_width=2)
 
     # --- 簡易圖例 ---
     def legend(x, y):
@@ -790,4 +824,283 @@ def plot_three_model_convergence_pygame_pixelaware(
             if e.type == pygame.QUIT:
                 running = False
     pygame.quit()
+
+
+# ================== Force-Heatmap (scalar-magnitude sum) =====================
+# This version computes, for each node i, the sum of magnitudes of *all* forces
+# acting on i: repulsion from every j (i != j), spring forces on incident edges,
+# and directional-constraint penalties. It does NOT vector-sum to a net force.
+
+from typing import List, Tuple, Optional
+import math
+import numpy as np
+import pygame
+
+# ---- Try keeping params consistent with physics.py; provide fallbacks ----
+try:
+    # You may rename these according to your actual module; this mirrors typical names.
+    from library.physics import (
+        REPULSION_STRENGTH_BASE as _KR,
+        MIN_DISTANCE_BASE as _DMIN,
+        DIRECTIONAL_FORCE_MAGNITUDE_BASE as _KDIR,
+        SPRING_STIFFNESS_BASE as spring_k
+    )
+except Exception:
+    _KR, _DMIN, _KDIR = 800.0, 4.0, 80.0  # fallbacks (tunable)
+
+# km→px scaling if needed for rest-length conversion
+try:
+    from library.metrics import km2pix  # if you already expose this here
+except Exception:
+    km2pix = 1.0  # safe fallback; can be overridden by function arg
+
+# ---- Simple blue→red palette ----
+def _bluehot_rgb(v: int) -> Tuple[int, int, int]:
+    v = int(max(0, min(255, v)))
+    stops = [
+        (0,   (8,  10, 40)),
+        (64,  (0,  90, 210)),
+        (128, (0, 205, 255)),
+        (192, (255, 255,  40)),
+        (255, (255,  40,   0)),
+    ]
+    for i in range(1, len(stops)):
+        x0, c0 = stops[i-1]; x1, c1 = stops[i]
+        if v <= x1:
+            t = 0.0 if x1 == x0 else (v - x0) / float(x1 - x0)
+            r = int(c0[0] + t * (c1[0] - c0[0]))
+            g = int(c0[1] + t * (c1[1] - c0[1]))
+            b = int(c0[2] + t * (c1[2] - c0[2]))
+            return (r, g, b)
+    return stops[-1][1]
+
+def _accumulate_gaussian(canvas: np.ndarray, cx: float, cy: float,
+                         amp: float, sigma: float, radius_px: Optional[int] = None) -> None:
+    """Add a 2D Gaussian with center (cx,cy), amplitude amp, std sigma to canvas."""
+    H, W = canvas.shape
+    if radius_px is None:
+        radius_px = int(3.0 * sigma)
+    x0 = max(0, int(math.floor(cx - radius_px)))
+    x1 = min(W - 1, int(math.ceil(cx + radius_px)))
+    y0 = max(0, int(math.floor(cy - radius_px)))
+    y1 = min(H - 1, int(math.ceil(cy + radius_px)))
+    if x1 < x0 or y1 < y0:
+        return
+    xs = np.arange(x0, x1 + 1, dtype=float)
+    ys = np.arange(y0, y1 + 1, dtype=float)
+    XX, YY = np.meshgrid(xs, ys)
+    R2 = (XX - cx) ** 2 + (YY - cy) ** 2
+    canvas[y0:y1+1, x0:x1+1] += amp * np.exp(-0.5 * R2 / (sigma ** 2))
+
+# -------------------- Core: scalar-magnitude sum of forces -------------------
+def _compute_force_scalar_sum(
+    pos_matrix: List[List[float]],
+    dni: dict,
+    data: List[List[str]],
+    directional_data: Optional[List[Tuple[str, str, str]]] = None,
+    *,
+    repulsion_strength: float = _KR,
+    min_distance: float = _DMIN,
+    # spring model: F_spring = spring_k * |d_ij - L_ij|
+    rest_length_policy: str = "physics_default",  # "physics_default" (len/10), "km", "pixel"
+    length_scale_km2px: float = km2pix,
+    # directional penalty: add fixed magnitude when relation violated
+    include_directional: bool = True,
+    include_spring: bool = True,
+    directional_force_magnitude: float = _KDIR,
+    rough_direction_cos_threshold: float = math.cos(math.pi/4), # ~0.707 (45°)
+    diagonal_cos_threshold: float = math.cos(math.pi/8),  # ~0.9239 (stricter than 0.707)
+) -> np.ndarray:
+    """
+    Return per-node scalar 'temperature' = sum of magnitudes of all forces
+    acting on the node (repulsion + spring + directional). NO vector summation.
+    """
+    N = len(pos_matrix)
+    P = np.asarray(pos_matrix, dtype=float)  # (N,2)
+    scal = np.zeros(N, dtype=float)
+
+    # ---------------- Repulsion (pairwise, all pairs) ----------------
+    for i in range(N):
+        pi = P[i]
+        for j in range(i + 1, N):
+            pj = P[j]
+            dx = pj[0] - pi[0]
+            dy = pj[1] - pi[1]
+            dist = max(float(math.hypot(dx, dy)), float(min_distance))
+            # Magnitude only (no direction accumulation)
+            F = repulsion_strength / dist
+            scal[i] += F
+            scal[j] += F
+
+    # ---------------- Springs (incident edges only) -------------------
+    if include_spring and data:
+        for row in data:
+            try:
+                u = dni[row[0]]; v = dni[row[1]]
+            except Exception:
+                continue
+            dpx = float(np.linalg.norm(P[v] - P[u]))  # current distance in px
+
+            # rest length in px
+            if rest_length_policy == "physics_default":
+                Lpx = float(row[3]) / 10.0
+            elif rest_length_policy == "km":
+                Lpx = float(row[3]) / float( km2Li )
+            else:
+                # fallback: safer than crashing
+                Lpx = float(row[3])
+
+            Fspr = spring_k * abs(dpx - Lpx)  # magnitude only
+            scal[u] += Fspr
+            scal[v] += Fspr
+
+    # --------------- Directional constraint penalties -----------------
+    if include_directional and directional_data:
+        # 4-neighborhood and 8-neighborhood unit vectors (screen coords)
+        dir4 = {'東': np.array([1.0, 0.0]), '西': np.array([-1.0, 0.0]),
+                '北': np.array([0.0, -1.0]), '南': np.array([0.0, 1.0])}
+        dir8 = {'東北': np.array([1.0, -1.0]) / math.sqrt(2.0),
+                '西北': np.array([-1.0, -1.0]) / math.sqrt(2.0),
+                '東南': np.array([1.0,  1.0]) / math.sqrt(2.0),
+                '西南': np.array([-1.0,  1.0]) / math.sqrt(2.0)}
+
+        for a, b, tag in directional_data:
+            if (a not in dni) or (b not in dni):
+                continue
+            i = dni[a]; j = dni[b]
+            v = P[j] - P[i]
+            nrm = float(np.linalg.norm(v))
+            if nrm == 0.0:
+                continue
+            v /= nrm
+            ok = True
+            if tag in dir4:
+                # accept if within ~45° of the intended diagonal (cos >= cos(pi/4))
+                ok = ( (float(np.dot(v, dir4[tag])) >= float(rough_direction_cos_threshold)) )
+            elif tag in dir8:
+                # accept if within ~22.5° of the intended diagonal (cos >= cos(pi/8))
+                ok = ( (float(np.dot(v, dir8[tag])) >= float(diagonal_cos_threshold)) )
+            if not ok:
+                # Violation: add fixed magnitude to both nodes (scalar, not vector)
+                scal[i] += directional_force_magnitude
+                scal[j] += directional_force_magnitude
+
+    return scal  # scalar per node (sum of magnitudes of all constituent forces)
+
+# ------------------- Public API: plot scalar-sum heatmap ---------------------
+def plot_force_heatmap_scalar_sum(
+    pos_matrix: List[List[float]],
+    vertice: List[str],
+    dni: dict,
+    data: List[List[str]],
+    directional_data: Optional[List[Tuple[str, str, str]]] = None,
+    *,
+    canvas_size: Tuple[int, int] = (1200, 750),
+    sigma_px: float = 26.0,
+    radius_px: Optional[int] = None,
+    repulsion_strength: float = _KR,
+    min_distance: float = _DMIN,
+    include_spring: bool = True,
+    rest_length_policy: str = "physics_default",  # "physics_default" | "km" | "pixel"
+    length_scale_km2px: float = km2pix,
+    include_directional: bool = True,
+    directional_force_magnitude: float = _KDIR,
+    rough_direction_cos_threshold: float = math.cos(math.pi/4),
+    diagonal_cos_threshold: float = math.cos(math.pi/8),
+    scaling: str = "percentile",  # "percentile" (2–98%) or "linear"
+    show_points: bool = False,
+    save_path: Optional[str] = None,
+    window_caption: str = "Force Heatmap (scalar magnitudes)"
+) -> None:
+    """
+    Render a Gaussian heatmap where each node's amplitude is proportional to the
+    sum of *magnitudes* of all forces acting on it (repulsion + spring + dir).
+    """
+    # Load directional data automatically if not supplied
+    if directional_data is None:
+        try:
+            from library.data_io import uploading_directional_data
+            _dir = uploading_directional_data()
+            directional_data = [(r[0], r[1], r[2]) for r in _dir]
+        except Exception:
+            directional_data = []
+
+    # 1) scalar force magnitudes per node
+    forces = _compute_force_scalar_sum(
+        pos_matrix, dni, data, directional_data,
+        repulsion_strength=repulsion_strength,
+        min_distance=min_distance,
+        include_spring=include_spring,
+        rest_length_policy=rest_length_policy,
+        length_scale_km2px=length_scale_km2px,
+        include_directional=include_directional,
+        directional_force_magnitude=directional_force_magnitude,
+        rough_direction_cos_threshold = rough_direction_cos_threshold,
+        diagonal_cos_threshold=diagonal_cos_threshold,
+    )
+
+    # 2) map to 0..255 with robust scaling
+    if scaling == "percentile":
+        lo = float(np.percentile(forces, 2)) if forces.size else 0.0
+        hi = float(np.percentile(forces, 98)) if forces.size else 1.0
+        if not math.isfinite(lo) or not math.isfinite(hi) or hi <= lo + 1e-12:
+            temps = np.zeros_like(forces, dtype=float)
+        else:
+            temps = np.clip((forces - lo) / (hi - lo), 0.0, 1.0) * 255.0
+    else:  # linear min–max
+        fmin = float(np.min(forces)) if forces.size else 0.0
+        fmax = float(np.max(forces)) if forces.size else 1.0
+        if not math.isfinite(fmin) or not math.isfinite(fmax) or fmax <= fmin + 1e-12:
+            temps = np.zeros_like(forces, dtype=float)
+        else:
+            temps = (forces - fmin) / (fmax - fmin) * 255.0
+
+    # 3) accumulate Gaussians
+    W, H = int(canvas_size[0]), int(canvas_size[1])
+    canvas = np.zeros((H, W), dtype=float)
+    for idx, (x, y) in enumerate(pos_matrix):
+        amp = float(temps[idx]) / 255.0
+        _accumulate_gaussian(canvas, float(x), float(y), amp, sigma_px, radius_px)
+
+    # 4) normalize canvas and colorize
+    cmin = float(np.min(canvas)) if canvas.size else 0.0
+    cmax = float(np.max(canvas)) if canvas.size else 1.0
+    if not math.isfinite(cmin) or not math.isfinite(cmax) or cmax <= cmin + 1e-12:
+        norm = np.zeros_like(canvas, dtype=np.uint8)
+    else:
+        norm = ((canvas - cmin) / (cmax - cmin) * 255.0).clip(0, 255).astype(np.uint8)
+
+    lut = np.array([_bluehot_rgb(i) for i in range(256)], dtype=np.uint8)
+    rgb = lut[norm]  # (H,W,3)
+
+    # Optionally overlay point markers
+    if show_points:
+        for (x, y) in pos_matrix:
+            xi, yi = int(round(x)), int(round(y))
+            if 0 <= xi < W and 0 <= yi < H:
+                rgb[max(0, yi-1):min(H, yi+2), max(0, xi-1):min(W, xi+2), :] = (255, 255, 255)
+
+    # 5) display / save
+    pygame.init()
+    pygame.display.set_caption(window_caption)
+    screen = pygame.display.set_mode((W, H))
+    surf = pygame.surfarray.make_surface(np.transpose(rgb, (1, 0, 2)))
+    screen.blit(surf, (0, 0))
+    pygame.display.flip()
+
+    if save_path:
+        import os
+        try:
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        except Exception:
+            pass
+        pygame.image.save(screen, save_path)
+
+    running = True
+    while running:
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                running = False
+    pygame.quit()
+
 

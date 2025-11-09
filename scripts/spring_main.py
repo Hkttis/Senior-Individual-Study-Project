@@ -14,7 +14,12 @@ from MDS_model.stress_majorization_mds_model import *
 
 def main_function(): # avoid global parameters
     refer_pos = [600,500]
-    vertice,dni,data,pos_matrix,fixed_positions_list = generate_CHEN_initial_positions(deepcopy(refer_pos))
+    fixed_point_labels = ["鄯善","都護治/烏壘"]
+    graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
+    gt = uploading_ground_truth(vertice,dni)
+    fixed_points_lonlat = [ tuple(gt[dni[cout]]) for cout in fixed_point_labels]
+    
+    vertice,dni,data,pos_matrix,fixed_positions_list = generate_CHEN_initial_positions(deepcopy(refer_pos), fixed_point_labels, fixed_points_lonlat)
     
     directional_data = uploading_directional_data()
     # the coordinates here have pixle units and flipped y axis ( from here to bottom )

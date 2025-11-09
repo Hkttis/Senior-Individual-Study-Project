@@ -251,7 +251,7 @@ def _read_model_csv(path: str) -> Tuple[List[List[List[Tuple[float, float]]]], O
             node = int(row["node_idx"])
             x = float(row["x_px"])
             y = float(row["y_px"])
-            temp[run][frame][node] = (x, y)
+            temp[run][frame][node] = [x, y]
             if has_label:
                 lbl = row.get("label", "")
                 if lbl and node not in node_labels:

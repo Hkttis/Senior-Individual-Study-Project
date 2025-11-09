@@ -239,6 +239,7 @@ def directed_MDS(c_data,data,graph,vertice,dni,edges) : # c_data is from data_pr
     fixed_points_flag,  inipos = fixed_input(n,dni)
     sel_data,in_dis_flag,in_direct_flag, m = select_data(n,c_data[0]+c_data[2],data,dni)
     sel_data = revise_direction(sel_data)
+    
     t = len(sel_data)
     dis =  numpy.zeros((n,n))
     for ver in graph :

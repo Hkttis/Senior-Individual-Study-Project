@@ -40,6 +40,37 @@ def wrong_directions_nonflip(pos_matrix, vertice, dni):
         
     return wrong_direction_lists
 
+def wrong_directions_flip(pos_matrix, vertice, dni):
+    
+    directional_data = uploading_directional_data()
+    
+    '''direction_revising force'''
+    # If we apply forces directory in direction of ideal directions, it will lead to equalibriam. 
+    # y-axis is toward negative side
+    # y-axis is toward negative side
+    direction_dict = {'東':np.array([1,0]), '西':np.array([-1,0]), '北':np.array([0,-1]), '南':np.array([0,1])}
+    direction_dict2 = {'東南':np.array([1,1]), '西北':np.array([-1,-1]), '東北':np.array([1,-1]), '西南':np.array([-1,1])}
+    wrong_direction_lists = []
+    for row in directional_data :
+        # calculate the distance vector between nodes
+        index1 = dni[row[0]] # left one in csv file
+        index2 = dni[row[1]] # right one
+        n1 = pos_matrix[index1]
+        n2 = pos_matrix[index2]
+        pos_vector = np.array([n2[0]-n1[0],n2[1]-n1[1]])
+        pos_vector = pos_vector / np.linalg.norm(pos_vector) # unit vector
+        if row[2] in direction_dict : # for those with rough direction only (東南西北), theta must smaller than pi/4
+            cos_similarity = np.dot(pos_vector,direction_dict[row[2]])
+            if np.dot(pos_vector,direction_dict[row[2]]) < 0 : # 1/sqrt(2) : # apply force if being on the wrong direction
+                wrong_direction_lists.append(row)
+                
+        else : # for those with more specific direction (東南、西北), the cos(theta) between directional vector and pos_vector must be over cos(pi/8)
+            cos_similarity = np.dot(pos_vector,direction_dict2[row[2]])/sqrt(2)
+            if cos_similarity < 1/sqrt(2):  # 0.924 : theta > pi/8
+                wrong_direction_lists.append(row)
+        
+    return wrong_direction_lists
+
 def directional_stress_nonflip(pos_matrix, vertice, dni):
     # Directional stress is not affected by scaling ( changing of units )
     dir_stress = 0

@@ -21,6 +21,7 @@ def run_directed_MDS( vis = True ):
     "C:\\Users\\justi\Desktop\\project\\csv doc utf8\\GPT-4_後漢書_numerals_utf8.csv"]
     pre_data = read_csvfile(datanum)
     c_data,disset = data_process(pre_data)
+    
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
     pos_matrix, stress_history, pos_history = directed_MDS(c_data,data,graph,vertice,dni,edges)
     
@@ -161,7 +162,7 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
     - Computes Kruskal's stress (unitless) and RMSE (km) from each run's *final* positions.
     """
     # Static data (same across runs)
-    graph, vertice, dni, edges, data = Chen_csv_and_graph()
+    graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
     gt_lonlat = uploading_ground_truth(vertice, dni)
 
     # Running means of histories (in pixel units)
@@ -276,7 +277,8 @@ def select_median_pos_history(
     refer_pos,
     *,
     median_policy: str = "lower",      # "lower" | "upper" | "nearest"
-    return_meta: bool = False
+    return_meta: bool = False,
+    return_worst: bool = False
 ) -> PosHistory | Tuple[PosHistory, int, float]:
     """
     Select the pos_history whose FINAL pos_matrix RMSE is the median among runs.
@@ -342,6 +344,9 @@ def select_median_pos_history(
     selected_history = all_pos_his_data[chosen_idx]
     if return_meta:
         return selected_history, chosen_idx, chosen_rm
+    if return_worst:
+        worst_rm, worst_idx = order[-1]
+        return selected_history, all_pos_his_data[worst_idx]
     return selected_history
 
 
