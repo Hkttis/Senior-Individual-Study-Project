@@ -71,7 +71,7 @@ import csv
 def Chen_csv_and_graph():
     # csv : 地點一 地點二 里程 里程 make it compatible to previous method
     data = [] # pouring all data into "data" without distinct book_class
-    with open( "C:\\Users\\justi\\Desktop\\project\\csv doc utf8\\漢書_陳世良_utf8.csv" , newline='', encoding='utf-8' ) as csvfile :
+    with open( "C:\\Users\\hktti\\Desktop\\project\\csv doc utf8\\漢書_陳世良_utf8.csv" , newline='', encoding='utf-8' ) as csvfile :
         data_tmp = []
         rows = csv.reader(csvfile)
         for row in rows :

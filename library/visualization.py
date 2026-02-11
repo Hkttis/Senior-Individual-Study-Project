@@ -1,4 +1,5 @@
 import pygame
+import pymunk.pygame_util
 import math
 import os
 from math import *
@@ -7,9 +8,12 @@ from copy import deepcopy
 from typing import List, Tuple, Optional
 
 
-from library.config import *
+from library.units import *
+from library.anchor_frame import px_list_to_km_list
 from library.metrics import stress_function, calculate_kruskals_stress, procrustes_align_by_fixed_points, rmse_km_from_pixels
 from library.geometry import lcc_transformation
+from library.coordinates import flipping_y, flipping_gt
+from library.units import pos_matrix_sim2km, pos_matrix_pix2km
 
 
 def plotting_physics_simulation_animation_tmp(space, screen, draw_options,font, data, vertice, dni, pos_history):
@@ -22,7 +26,7 @@ def plotting_physics_simulation_animation_tmp(space, screen, draw_options,font, 
                 running = False
         space.step(0.01) # Advances the Pymunk physics engine by 0.02 seconds per frame, updating positions and velocities.
         clock.tick(60) # Limits the frame rate to 60 FPS to ensure smooth simulation.
-        current_stress = stress_function(data,dni,pos_matrix)
+        current_stress = stress_function(data,dni,pos_matrix_sim2km(pos_matrix))
         # refresh the screen
         screen.fill((255, 255, 255)) # fill the screen with white to clear previous frame
         # Calculate and display stress ； show cnt
@@ -57,7 +61,8 @@ def plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertic
     for i, node in enumerate(nodes):
         label = vertice[i]
         text_surface = font.render(label, True, (0, 0, 0))
-        screen.blit(text_surface, (node.position[0] - 10, node.position[1] - 10))
+        x, y = pymunk.pygame_util.to_pygame(node.position, screen)
+        screen.blit(text_surface, (x - 10, y - 10))
     pygame.display.flip() # Updates the entire screen with new frame data.
     return screen,space
 
@@ -129,7 +134,7 @@ def plot_stress_convergence_log(stress_history, file_name):
     screen.blit(now_stress_text, (20, 10))  # 放在 (20,25) 位置
 
     # Show and save
-    save_path = f"C:/Users/justi/Desktop/project/results/{file_name}stress_convergence_log.png"
+    save_path = f"C:/Users/hktti/Desktop/project/results/{file_name}stress_convergence_log.png"
     pygame.display.update()
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     pygame.image.save(screen, save_path)
@@ -187,7 +192,7 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
             x1, y1 = adjusted_positions[ind1]
             x2, y2 = adjusted_positions[ind2]
             actual_dist = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-            ideal_dist = float(row[2]) / 10 *scale_factor
+            ideal_dist = float(row[2])*Li2pix *scale_factor
             error_rate = abs(actual_dist - ideal_dist) / ideal_dist
             errors.append(error_rate)
             edges.append(((x1, y1), (x2, y2)))
@@ -278,7 +283,7 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
 
     
     # === Save image to specific folder with name based on zoom_area ===
-    save_dir = "C:/Users/justi/Desktop/project/results"
+    save_dir = "C:/Users/hktti/Desktop/project/results"
     os.makedirs(save_dir, exist_ok=True)
 
     if zoom_area:
@@ -313,10 +318,12 @@ def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_po
        - NEW: faint lines from sim point to its ground-truth partner
     """
     # --- 1) Sim to km (anchor at refer_pos) ---
-    sim_xy_km = [((x - refer_pos[0]) / km2pix, (y - refer_pos[1]) / km2pix) for (x, y) in pos_matrix]
+    sim_xy_km = px_list_to_km_list(pos_matrix, tuple(refer_pos), km2pix)
 
     # --- 2) Ground truth (km) ---
     gt_xy_km = lcc_transformation(dni, ground_truth_positions)
+
+    gt_xy_km = flipping_gt(gt_xy_km)
 
     # --- 3) Errors / RMSE (km) ---
     errors, valid_idx = [], []
@@ -449,13 +456,13 @@ def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_po
     rmse_surf = font.render(f"RMSE = {rmse:.3f} km", True, (0, 0, 0))
     screen.blit(rmse_surf, (width - rmse_surf.get_width() - 20, 30))
 
-    kruskal_stress = calculate_kruskals_stress(dni, deepcopy(pos_matrix), data)
+    kruskal_stress = calculate_kruskals_stress(dni, pos_matrix_pix2km(deepcopy(pos_matrix)), data)
     kru_surf = font.render(f"kruskal's stress = {kruskal_stress:.4f}", True, (0, 0, 0))
     screen.blit(kru_surf, (width - kru_surf.get_width() - 20, 80))
 
     # --- 9) Save & wait ---
     pygame.display.flip()
-    save_path = f"C:/Users/justi/Desktop/project/results/{file_name}Overlap.png"
+    save_path = f"C:/Users/hktti/Desktop/project/results/{file_name}Overlap.png"
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     pygame.image.save(screen, save_path)
 
@@ -487,7 +494,7 @@ def plot_three_model_convergence_pygame_pixelaware(
     bin_size_iters_sm=25, # ★ 以 iterations 分箱：可設 5、10、20
     band_alpha=38,                  # ★ 包絡帶透明度（~15%）
     pre_process=False,              #  pos_history 是否事先經過轉 px 和 flipping
-    save_path="C:/Users/justi/Desktop/project/results/ThreeModels_RMSE_Kruskal_pixelaware.png",
+    save_path="C:/Users/hktti/Desktop/project/results/ThreeModels_RMSE_Kruskal_pixelaware.png",
 ):
     """
     以「固定 iterations 數」分箱的像素友善收斂圖：
@@ -498,27 +505,6 @@ def plot_three_model_convergence_pygame_pixelaware(
       - median 實線
     並保留/強化座標軸與 y-tick 邊界檢查。
     """
-
-    # --- 兼容 import（專案/單檔兩種結構） ---
-    try:
-        from library.config import km2pix, km2Li
-        from library.metrics import calculate_kruskals_stress
-        from library.geometry import lcc_transformation
-    except Exception:
-        from metrics import calculate_kruskals_stress
-        from geometry import lcc_transformation   # 若你不是 library 結構，請確保有對應模組
-        # 若 config 不在 library，可自行設置或 import
-        try:
-            from config import km2pix, km2Li
-        except Exception:
-            km2pix, km2Li =1/(10 * 0.415), 1/0.415  # 後備（避免崩潰；數值會不準）
-
-    # flipping_y：盡量沿用你的實作（在 MDS_model.plot_node_link_diagram）
-    try:
-        from MDS_model.plot_node_link_diagram import flipping_y
-    except Exception:
-        def flipping_y(P, height):
-            return [(x, height - y) for (x, y) in P]
 
     if anchor_label not in dni:
         raise KeyError(f"Anchor '{anchor_label}' not found in dni.")
@@ -582,7 +568,7 @@ def plot_three_model_convergence_pygame_pixelaware(
                     P_pix = deepcopy(P) if orientation == "pygame" else flipping_y(deepcopy(P), height=H)
                 else:
                     P_pix = mds_li_to_pixels_for_kruskal(P)
-            ks = float(calculate_kruskals_stress(dni, deepcopy([list(q) for q in P_pix]), data))
+            ks = float(calculate_kruskals_stress(dni, pos_matrix_pix2km(deepcopy([list(q) for q in P_pix])), data))
             series.append(ks)
         return series
 
@@ -832,9 +818,6 @@ def plot_three_model_convergence_pygame_pixelaware(
 # and directional-constraint penalties. It does NOT vector-sum to a net force.
 
 from typing import List, Tuple, Optional
-import math
-import numpy as np
-import pygame
 
 # ---- Try keeping params consistent with physics.py; provide fallbacks ----
 try:
@@ -848,11 +831,6 @@ try:
 except Exception:
     _KR, _DMIN, _KDIR = 800.0, 4.0, 80.0  # fallbacks (tunable)
 
-# km→px scaling if needed for rest-length conversion
-try:
-    from library.metrics import km2pix  # if you already expose this here
-except Exception:
-    km2pix = 1.0  # safe fallback; can be overridden by function arg
 
 # ---- Simple blue→red palette ----
 def _bluehot_rgb(v: int) -> Tuple[int, int, int]:
@@ -903,7 +881,6 @@ def _compute_force_scalar_sum(
     min_distance: float = _DMIN,
     # spring model: F_spring = spring_k * |d_ij - L_ij|
     rest_length_policy: str = "physics_default",  # "physics_default" (len/10), "km", "pixel"
-    length_scale_km2px: float = km2pix,
     # directional penalty: add fixed magnitude when relation violated
     include_directional: bool = True,
     include_spring: bool = True,
@@ -943,12 +920,12 @@ def _compute_force_scalar_sum(
 
             # rest length in px
             if rest_length_policy == "physics_default":
-                Lpx = float(row[3]) / 10.0
+                Lpx = float(row[2]) * Li2pix
             elif rest_length_policy == "km":
-                Lpx = float(row[3]) / float( km2Li )
+                Lpx = float(row[2]) / float( km2Li )
             else:
                 # fallback: safer than crashing
-                Lpx = float(row[3])
+                Lpx = float(row[2])
 
             Fspr = spring_k * abs(dpx - Lpx)  # magnitude only
             scal[u] += Fspr

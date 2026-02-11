@@ -15,9 +15,9 @@ from library.data_io import *
 CENTER_LAT = 41.0    # roughly in Tarim Basin
 CENTER_LON = 87.0
 ZOOM_START = 6
-RESULT_DIR = r"C:/Users/justi/Desktop/project/results"
+RESULT_DIR = r"C:/Users/hktti/Desktop/project/results"
 
-HIST_MAP_PATH   = r"C:/Users/justi/Desktop/project/project_refer/westHan_WR_gt.jpg"
+HIST_MAP_PATH   = r"C:/Users/hktti/Desktop/project/project_refer/westHan_WR_gt.jpg"
 HIST_MAP_BOUNDS = ((35.0, 75.0), (46.0, 99.0))   # south/west, north/east
 # =========================================
 
@@ -136,7 +136,7 @@ def build_interactive_map():
     '''
     '''
     # 設定 compass 位置（右上角）
-    compass_img = r"C:/Users/justi/Desktop/project/project_refer/compass_rose.png"
+    compass_img = r"C:/Users/hktti/Desktop/project/project_refer/compass_rose.png"
     compass_bounds = ((44.5, 97.5), (46, 99))  # ((south, west), (north, east))
 
     compass_overlay = ImageOverlay(

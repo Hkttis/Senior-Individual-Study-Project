@@ -13,7 +13,9 @@ from MDS_model.stress_majorization_mds_model import *
 
 
 def main_function(): # avoid global parameters
-    refer_pos = [600,500]
+    refer_pos_screen = [600,500]
+    refer_pos = [refer_pos_screen[0], height - refer_pos_screen[1]]  # y-up SIM anchor
+
     fixed_point_labels = ["鄯善","都護治/烏壘"]
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
     gt = uploading_ground_truth(vertice,dni)

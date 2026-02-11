@@ -1,32 +1,32 @@
 import math
 import numpy as np
-from library.config import km2pix, km2Li
+from library.units import *
 from library.data_io import uploading_ground_truth
+from library.anchor_frame import px_list_to_km_list
 from library.geometry import lcc_transformation
+from library.coordinates import flipping_y
 from copy import deepcopy
 
-def stress_function(data,dni,pos_matrix) : 
+def stress_function(data,dni,pos_matrix) : # data units : km
     stress = 0
     for row in data :
         ind1 = dni[row[0]]
         ind2 = dni[row[1]]
         # turn pixel_unit to Li unit
         distance = math.sqrt((pos_matrix[ind2][0]-pos_matrix[ind1][0])**2 + (pos_matrix[ind2][1]-pos_matrix[ind1][1])**2)
-        ideal_dist = float(row[2])/10
+        ideal_dist = float(row[2]) / Li2km
         stress += (distance-ideal_dist)**2 / (ideal_dist**2)
     return stress
 
-def calculate_kruskals_stress(dni,pos_matrix,data) :
-    tmp_pos_matrix = []
-    for pos_pair in pos_matrix : # transform the pixel unit to km 
-        tmp_pos_matrix.append( (pos_pair[0] / km2pix, pos_pair[1] / km2pix) )
+
+def calculate_kruskals_stress(dni,pos_matrix,data) : # data units : km
     error_square = 0
     dis_square = 0
     for row in data :
-        p1 = tmp_pos_matrix[dni[row[0]]]
-        p2 = tmp_pos_matrix[dni[row[1]]]
+        p1 = pos_matrix[dni[row[0]]]
+        p2 = pos_matrix[dni[row[1]]]
         actual_dis = np.sqrt( (p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
-        ideal_dis = float(row[2]) / km2Li
+        ideal_dis = float(row[2]) / Li2km
         error_square += (actual_dis-ideal_dis)**2
         dis_square += actual_dis**2
     kruskal_stress = np.sqrt(error_square/dis_square)
@@ -95,7 +95,7 @@ def procrustes_align_by_fixed_points(
         GtX[i][0], GtX[i][1] = gt_xy_km[ind][0], gt_xy_km[ind][1]
         
         if label == anchor_label:
-            new_anc = len(DeX) - 1  # index in the filtered list
+            new_anc = i  
         
     sim_km = deepcopy(DeX)
     gt_xy_km = deepcopy(GtX)
@@ -187,7 +187,7 @@ def procrustes_analysis_to_gt(flip, vertice, dni, refer_pos) :
     return aligned_pos.tolist()
 
 # For directed MDS
-def alignment_and_scaling(pos_matrix, vertice, dni, refer_pos):
+def alignment_and_scaling(pos_matrix, vertice, dni, refer_pos, y_down=True):
     """
     Scale all coordinates by scale and translate so that the point labeled
     '鄯善' matches refer_pos.
@@ -207,11 +207,12 @@ def alignment_and_scaling(pos_matrix, vertice, dni, refer_pos):
         raise ValueError("Label '鄯善' not found in vertice.") from None
 
     # 1) Scale by 1/10, turn Li to pixel
-    scale = 0.1
+    scale = Li2pix
     scaled = [[x * scale, y * scale] for x, y in pos_matrix]
     
     # Be aware of the y-axis direction is flipped in pygame
-    flip = flipping_y(scaled, height=750)
+    if y_down :
+        flip = flipping_y(scaled)
 
     # 2) Compute translation so '鄯善' lands at refer_pos
     anchor_x, anchor_y = flip[anchor_idx]
@@ -225,10 +226,6 @@ def alignment_and_scaling(pos_matrix, vertice, dni, refer_pos):
 
     return aligned
 
-def flipping_y(pos_matrix, height):
-    flipped = [[x, height - y] for x, y in pos_matrix]
-    return flipped
-
 def rmse_km_from_pixels(pos_px, refer_pos, dni, gt_lonlat):
     """
     Compute RMSE (km) between pixel positions and LCC-projected ground truth.
@@ -236,7 +233,7 @@ def rmse_km_from_pixels(pos_px, refer_pos, dni, gt_lonlat):
     - refer_pos: (x0,y0) in pixels.
     """
     # 1) sim px -> km anchored at refer_pos
-    sx_km = [((x - refer_pos[0]) / km2pix, (y - refer_pos[1]) / km2pix) for (x, y) in pos_px]
+    sx_km = px_list_to_km_list(pos_px, tuple(refer_pos), km2pix)
     # 2) project GT lon/lat -> LCC (km), anchor at 鄯善 with north-up convention
     gt_km = lcc_transformation(dni, gt_lonlat)  # returns list[(x,y) or (None,None)]
     # 3) RMSE over nodes with GT

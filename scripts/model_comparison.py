@@ -1,8 +1,10 @@
 
-from library.model_cmp import *
+import numpy as np
+from library.model_cmp import run_physics_simulation_model, multi_measurement_benchmark
 from library.data_io import *
 from library.visualization import plot_three_model_convergence_pygame_pixelaware, plot_force_heatmap_scalar_sum
-from MDS_model.plot_node_link_diagram import wrong_directions_flip
+from MDS_model.plot_node_link_diagram import wrong_directions_nonflip
+from library.coordinates import flipping_y
 
 
 
@@ -41,6 +43,13 @@ def download_and_upload_allpos_in_runs():
 if __name__ == "__main__" :
     
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
+    fixed_point_labels = ["鄯善","都護治/烏壘"]
+    gt = uploading_ground_truth(vertice,dni)
+    fixed_points_lonlat = [ tuple(gt[dni[cout]]) for cout in fixed_point_labels]
+    run_physics_simulation_model( fixed_point_labels, fixed_points_lonlat, vis = True)
+
+    """
+    graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
     
     # temporalily use ground truth to simulate given fixed points' positions
     fixed_point_labels = ["鄯善","都護治/烏壘"]
@@ -57,9 +66,9 @@ if __name__ == "__main__" :
     #med_pos_hist_dm_px = run_directed_MDS(vis = False)
     #med_pos_hist_ph_px = run_physics_simulation_model(fixed_point_labels, fixed_points_lonlat, vis = False)
     
-    pos_matrix = deepcopy(med_pos_hist_ph_px[-1])
+    pos_matrix = deepcopy(worst_case_pos_hist[-1])
     refer_pos = (600,500)
-    wrong_direction_lists = wrong_directions_flip(pos_matrix, vertice, dni)
+    wrong_direction_lists = wrong_directions_nonflip(flipping_y(pos_matrix), vertice, dni)
     
     errors, edge_labels = visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_direction_lists, zoom_area=None, file_name = "PhysicsSim_")
     visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_direction_lists, zoom_area=(500, 325, 800, 400), file_name = "PhysicsSim_")
@@ -75,7 +84,7 @@ if __name__ == "__main__" :
         canvas_size=(1200, 750),
         sigma_px=28.0,                 # spread of each heat source
         show_points=True,
-        save_path="C:/Users/justi/Desktop/project/results/phy_force_heatmap.png",
+        save_path="C:/Users/hktti/Desktop/project/results/phy_force_heatmap.png",
         window_caption="Force Heatmap (physics-like)"
     )
     
@@ -87,3 +96,4 @@ if __name__ == "__main__" :
         vertice = vertice, dni = dni, data = data, ground_truth_positions=uploading_ground_truth(vertice, dni), fixed_point_labels = fixed_point_labels,
         fixed_point_lonlat = fixed_points_lonlat, refer_pos=(600, 500), bin_size_iters_dm=10, bin_size_iters_sm=25, pre_process=True )
     '''
+    """

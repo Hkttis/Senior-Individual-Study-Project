@@ -6,11 +6,10 @@ from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import cg
 
 from library.config import km2pix, km2Li
+from library.directions import DIR8_UNIT_SIM as unit_direction_dict
 
 
-insq2 = 1/math.sqrt(2)
-unit_direction_dict = {'東':[1,0], '西':[-1,0], '北':[0,1], '南':[0,-1], 
-              '東南':[insq2,-insq2], '西北':[-insq2,insq2], '東北':[insq2,insq2], '西南':[-insq2,-insq2]}
+
 
 # configuration
 fix_weight = 1  # weight of fixed points is 10000, let it be fixed because it wanna fit the dij

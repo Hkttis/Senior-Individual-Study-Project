@@ -2,16 +2,19 @@ import pygame
 import pymunk
 import pymunk.pygame_util
 import numpy as np
+import math
 from math import sqrt
 from copy import deepcopy
 
 from library.config import *
 from library.visualization import plotting_physics_simulation
 from library.metrics import stress_function
+from library.units import pos_matrix_sim2km
+from library.directions import DIR4_SIM, DIR4DIAG_RAW_SIM, DIR8_UNIT_SIM
 
-def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,spring_stiffness,repulsion_strength,directional_force_magnitude, plot = False) : # Main PS function
-    
-    '''initialize constants for main PS'''
+
+def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,
+                            spring_stiffness,repulsion_strength,directional_force_magnitude, plot = False):
     n = len(vertice)
     
     mass = MASS_BASE
@@ -21,194 +24,215 @@ def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_p
     spring_damping = SPRING_DAMPING_BASE
     min_distance = MIN_DISTANCE_BASE
     resistance = RESISTANCE_BASE
-    
-    '''set up PS'''
+
     pygame.init()
     screen = pygame.display.set_mode((1200, 750))
     space = pymunk.Space()
+    pymunk.pygame_util.positive_y_is_up = True
     draw_options = pymunk.pygame_util.DrawOptions(screen)
     font = pygame.font.SysFont("Microsoft YaHei", 12)
-    nodes,space = create_nodes_and_springs(n,mass,radius,vrange,spring_stiffness,spring_damping,fixmass,space,data, dni,pos_matrix,fixed_positions_list)
-    # groupdni = classify_nodes()
-    wrong_direction_lists,stress_history,pos_history, pos_matrix = run_physics_simulation(min_distance,repulsion_strength,resistance,directional_force_magnitude,screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix, plot)
-        
+
+    nodes,space = create_nodes_and_springs(
+        n,mass,radius,vrange,spring_stiffness,spring_damping,fixmass,
+        space,data, dni,pos_matrix,fixed_positions_list
+    )
+
+    wrong_direction_lists,stress_history,pos_history, pos_matrix = run_physics_simulation(
+        min_distance,repulsion_strength,resistance,directional_force_magnitude,
+        screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix, plot
+    )
+
     return wrong_direction_lists,stress_history,pos_history,pos_matrix
-def create_nodes_and_springs(n,mass,radius,vrange,spring_stiffness,spring_damping,fixmass,space,data, dni,pos_matrix,fixed_positions_list) : #add nodes and springs into pymunk
-    nodes = [pymunk.Body(mass,pymunk.moment_for_circle(mass, 0, radius)) for _ in range(n)]
-    # add fixed nodes
-    for row in fixed_positions_list :
-        nodes[dni[row[0]]] = pymunk.Body(fixmass,pymunk.moment_for_circle(mass, 0, radius))
-        # print(pos_matrix[dni[row[0]]])
-    for i in range(n) :
+
+
+def create_nodes_and_springs(n,mass,radius,vrange,spring_stiffness,spring_damping,fixmass,
+                             space,data, dni,pos_matrix,fixed_positions_list):
+    """Create pymunk bodies/springs and anchor constraints.
+
+    Contract:
+      - pos_matrix is in SIM coordinates (currently pixel-like).
+      - Fixed points are enforced via constraints (PivotJoint to space.static_body).
+      - No per-step overwriting of anchor positions.
+    """
+    # 1) bodies + shapes
+    nodes = [pymunk.Body(mass, pymunk.moment_for_circle(mass, 0, radius)) for _ in range(n)]
+
+    for i in range(n):
         body = nodes[i]
-        body.position = (pos_matrix[i][0], pos_matrix[i][1])
-        #body.velocity = (random.uniform((-1)*vrange, vrange), random.uniform((-1)*vrange, vrange))
-        body.velocity = (0,0)
+        body.position = (float(pos_matrix[i][0]), float(pos_matrix[i][1]))
+        body.velocity = (0, 0)
         shape = pymunk.Circle(body, radius)
-        # control the collision of points
-        #shape.filter = pymunk.ShapeFilter(categories=groupdni[vertice[i]], mask=groupdni[vertice[i]]) # collide in same group
-        #shape.filter = pymunk.ShapeFilter(group = groupdni[vertice[i]]) # collide in different group
-        shape.filter = pymunk.ShapeFilter(group = 1) # not collide with each other
-        space.add(body,shape)
-    springs = []
+        shape.filter = pymunk.ShapeFilter(group=1)
+        space.add(body, shape)
+
+    # 2) anchor constraints (J^T lambda from solver)
+    for row in fixed_positions_list:
+        label = row[0]
+        if label not in dni:
+            continue
+        idx = dni[label]
+        body = nodes[idx]
+        pivot = pymunk.PivotJoint(space.static_body, body, body.position)
+        pivot.max_force = 1e9
+        pivot.max_bias = 1e7
+        space.add(pivot)
+
     for row in data:
         i = dni[row[0]]
         j = dni[row[1]]
-        spring = pymunk.DampedSpring(
-            nodes[i], nodes[j], (0, 0), (0, 0), int(row[3])/10, spring_stiffness, spring_damping
-        )
-        springs.append(spring)
+        rest_length = float(row[2])
+        spring = pymunk.DampedSpring(nodes[i], nodes[j], (0, 0), (0, 0),
+                                     rest_length, spring_stiffness, spring_damping)
         space.add(spring)
-    return nodes,space
-def run_physics_simulation(min_distance,repulsion_strength,resistance,directional_force_magnitude,screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix,plot): # run physics_simulation
-    clock = pygame.time.Clock() # control pygame time frame
-    running = True # running flag
+
+    return nodes, space
+
+
+def run_physics_simulation(min_distance,repulsion_strength,resistance,directional_force_magnitude,
+                           screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix,plot):
+    clock = pygame.time.Clock()
     iteration = 0
     stress_history = []
     pos_history = []
-    while running:
+    while True:
         iteration += 1
-        # resistance += 0.001
-        for event in pygame.event.get(): # handle events like closing the window
+        for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False
-        space.step(0.01) # Advances the Pymunk physics engine by 0.02 seconds per frame, updating positions and velocities.
-        clock.tick(60) # Limits the frame rate to 60 FPS to ensure smooth simulation.
-        nodes,cnt,wrong_direction_lists = apply_forces(min_distance,repulsion_strength,resistance,directional_force_magnitude,nodes,directional_data, dni)
-        for i,node in enumerate(nodes) :
+                return [], stress_history, pos_history, pos_matrix
+
+        space.step(0.01)
+        clock.tick(60)
+
+        nodes,cnt,wrong_direction_lists = apply_forces(
+            min_distance,repulsion_strength,resistance,directional_force_magnitude,
+            nodes,directional_data, dni
+        )
+
+        for i,node in enumerate(nodes):
             pos_matrix[i] = nodes[i].position
         pos_history.append(deepcopy(pos_matrix))
-        current_stress = stress_function(data,dni,pos_matrix)
-        if plot :
-            screen,space = plotting_physics_simulation(screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,cnt,wrong_direction_lists,current_stress)
+
+        current_stress = stress_function(data,dni,pos_matrix_sim2km(pos_matrix))
+
+        if plot:
+            screen,space = plotting_physics_simulation(
+                screen,space,draw_options,font,nodes,data,vertice,dni, pos_matrix,
+                cnt,wrong_direction_lists,current_stress
+            )
+
         stress_history.append(current_stress)
-        if iteration > stop_physim_iteration_time :
+        if iteration > stop_physim_iteration_time:
             break
+
+
     return wrong_direction_lists,stress_history,pos_history, pos_matrix
+
+
 def apply_forces(min_distance,repulsion_strength,resistance,directional_force_magnitude,nodes,directional_data, dni):
-    '''replusive force'''
+    """Apply forces:
+      1) Repulsion
+      2) Directional force = squared hinge loss gradient (paper-aligned)
+      3) Linear resistance
+
+    Directional hinge (for each constraint u->v with desired direction v_dir):
+      z = cos(theta_h) - <r_hat, v_dir>
+      if z>0:
+        F_u = w_dir * z * ((I - r_hat r_hat^T) v_dir) / (||r|| + eps)
+        F_v = -F_u
+    """
+    # --- 1) repulsive force ---
     for i, node_a in enumerate(nodes):
         for j, node_b in enumerate(nodes):
             if i >= j:
                 continue
             dx = node_b.position.x - node_a.position.x
             dy = node_b.position.y - node_a.position.y
-            distance = max((dx**2 + dy**2) ** 0.5, min_distance)
-            force_magnitude = repulsion_strength / (distance ** 1) # should be 2 ???
+            distance = (dx * dx + dy * dy) ** 0.5 + min_distance
+            force_magnitude = repulsion_strength / (distance ** 1)
             fx = force_magnitude * dx / distance
             fy = force_magnitude * dy / distance
             node_a.apply_force_at_world_point((-fx, -fy), node_a.position)
             node_b.apply_force_at_world_point((fx, fy), node_b.position)
-    '''direction_revising force'''
-    # If we apply forces directory in direction of ideal directions, it will lead to equalibriam. 
-    # y-axis is toward negative side
-    direction_dict = {'東':np.array([1,0]), '西':np.array([-1,0]), '北':np.array([0,-1]), '南':np.array([0,1])}
-    direction_dict2 = {'東南':np.array([1,1]), '西北':np.array([-1,-1]), '東北':np.array([1,-1]), '西南':np.array([-1,1])}
-    cnt = 0 # recording the number of the wrong directions
+
+    # --- 2) directional hinge force (Updated: Angular Hinge) ---
+    # 定義容忍角度 (以 radians 為單位)
+    theta_h_4 = math.pi / 2.0 
+    theta_h_8 = math.pi / 4.0  
+    eps = 1e-9
+
+    cnt = 0
     wrong_direction_lists = []
-    for row in directional_data :
-        # calculate the distance vector between nodes
-        index1 = dni[row[0]] # left one in csv file
-        index2 = dni[row[1]] # right one
-        node1 = nodes[index1]
-        node2 = nodes[index2]
-        n1 = node1.position
-        n2 = node2.position
-        pos_vector = np.array([n2.x-n1.x,n2.y-n1.y])
-        pos_vector = pos_vector / np.linalg.norm(pos_vector) # unit vector
-        ver_vector1 = np.array([-pos_vector[1],pos_vector[0]])
-        ver_vector2 = np.array([pos_vector[1],-pos_vector[0]])
-        if row[2] in direction_dict : # for those with rough direction only (東南西北), theta must smaller than pi/4
-            cos_similarity = np.dot(pos_vector,direction_dict[row[2]])
-            if np.dot(pos_vector,direction_dict[row[2]]) < 0 : # 1/sqrt(2) : # apply force if being on the wrong direction
-                cnt+=1
-                wrong_direction_lists.append(row)
-                '''
-                node1.apply_force_at_world_point(tuple(-directional_force_magnitude*direction_dict[row[2]]),node1.position)
-                node2.apply_force_at_world_point(tuple(directional_force_magnitude*direction_dict[row[2]]),node2.position)
-                '''
-                # choose which way to rotates
-                if np.dot(ver_vector1,direction_dict[row[2]])>=np.dot(ver_vector2,direction_dict[row[2]]) :
-                    node1.apply_force_at_world_point(tuple(directional_force_magnitude*ver_vector2),node1.position)
-                    node2.apply_force_at_world_point(tuple(directional_force_magnitude*ver_vector1),node2.position)
-                else :
-                    node1.apply_force_at_world_point(tuple(directional_force_magnitude*ver_vector1),node1.position)
-                    node2.apply_force_at_world_point(tuple(directional_force_magnitude*ver_vector2),node2.position)
-                
-        else : # for those with more specific direction (東南、西北), the cos(theta) between directional vector and pos_vector must be over cos(pi/8)
-            cos_similarity = np.dot(pos_vector,direction_dict2[row[2]])/sqrt(2)
-            if cos_similarity < 1/sqrt(2):  # 0.924 : theta > pi/8
-                cnt+=1
-                wrong_direction_lists.append(row)
-                if np.dot(ver_vector1,direction_dict2[row[2]])>=np.dot(ver_vector2,direction_dict2[row[2]]) :
-                    node1.apply_force_at_world_point(tuple(directional_force_magnitude*ver_vector2),node1.position)
-                    node2.apply_force_at_world_point(tuple(directional_force_magnitude*ver_vector1),node2.position)
-                else :
-                    node1.apply_force_at_world_point(tuple(directional_force_magnitude*ver_vector1),node1.position)
-                    node2.apply_force_at_world_point(tuple(directional_force_magnitude*ver_vector2),node2.position)
-                
-    '''resistance'''
+
+    for row in directional_data:
+        if len(row) < 3:
+            continue
+        u_name, v_name, d_name = row[0], row[1], row[2].strip()
+        if u_name not in dni or v_name not in dni:
+            continue
+        if d_name not in DIR8_UNIT_SIM:
+            continue
+
+        node_u = nodes[dni[u_name]]
+        node_v = nodes[dni[v_name]]
+
+        # 計算邊向量 r = v - u
+        r = np.array([node_v.position.x - node_u.position.x,
+                      node_v.position.y - node_u.position.y], dtype=float)
+        dist = float(np.linalg.norm(r))
+        
+        # 避免除以零
+        if dist < eps:
+            continue
+
+        r_hat = r / dist
+        v_dir = np.array(DIR8_UNIT_SIM[d_name], dtype=float)
+
+        # --- 核心修改開始 ---
+        
+        # 1. 計算精確角度 (使用 atan2)
+        # dot = cos(phi), cross = sin(phi)
+        d_val = float(np.dot(r_hat, v_dir))
+        c_val = float(r_hat[0]*v_dir[1] - r_hat[1]*v_dir[0]) # 2D cross product
+        phi = math.atan2(c_val, d_val)  # 範圍 (-pi, pi]
+
+        # 2. 判斷是否違規
+        current_theta_h = theta_h_4 if d_name in DIR4_SIM else theta_h_8
+        violation = abs(phi) - current_theta_h # 違規量 z
+        
+
+        if violation <= 0:
+            continue # 在容忍範圍內，無力
+
+        # 3. 記錄違規
+        cnt += 1
+        wrong_direction_lists.append(row)
+
+        # --- 4. 計算梯度力 (Corrected based on Math Derivation) ---
+        # 根據推導，施加在 u (尾端) 的力方向，應沿著 r 的「順時針切線」方向與 sgn(phi) 的乘積。
+        # t_cw (單位順時針切線) = (r_y, -r_x) / dist
+        
+        sgn = 1.0 if phi >= 0 else -1.0
+        # 定義 r 的順時針單位切線向量
+        # r = (r[0], r[1]) -> cw_tangent = (r[1], -r[0])
+        tangent_cw_x = r[1]/dist
+        tangent_cw_y = -r[0]/dist
+        
+        coeff = (directional_force_magnitude * violation * sgn) /dist
+        
+        Fx_u = coeff * tangent_cw_x
+        Fy_u = coeff * tangent_cw_y
+        
+        # --- 5. 施加力 (Newton's 3rd Law) ---
+        # F_u: 施加在起點 (Tail) 的力 -> 根據推導，這就是我們算出的正向力
+        # F_v: 施加在終點 (Head) 的力 -> 反作用力
+        
+        node_u.apply_force_at_world_point((Fx_u, Fy_u), node_u.position)
+        node_v.apply_force_at_world_point((-Fx_u, -Fy_u), node_v.position)
+
+    # --- 3) resistance ---
     for node in nodes:
         vx, vy = node.velocity
-        fx = -resistance * vx
-        fy = -resistance * vy
-        node.apply_force_at_world_point((fx, fy), node.position)
-    return nodes,cnt,wrong_direction_lists
+        node.apply_force_at_world_point((-resistance * vx, -resistance * vy), node.position)
 
-'''
-def pre_physics_simulation(pos_matrix,dni) : # Initialize the precise positions of three fixed points through prePS
-    
-    # set up simulation
-    pygame.init()
-    prescreen = pygame.display.set_mode((1200, 750))
-    prespace = pymunk.Space()
-    pre_draw_options = pymunk.pygame_util.DrawOptions(prescreen)
-    font = pygame.font.SysFont("Microsoft YaHei", 20)
-    
-    # set up body and springs in PS
-    preset = ["鄯善","都護治/烏壘",'車師後']
-    prebody = []
-    for i in range(3) :
-        body = pymunk.Body(5,pymunk.moment_for_circle(5, 0, 5))
-        body.position = (pos_matrix[dni[preset[i]]][0], pos_matrix[dni[preset[i]]][1])
-        prebody.append(body)
-        prespace.add(prebody[i],pymunk.Circle(prebody[i], 5))
+    return nodes, cnt, wrong_direction_lists
 
-    spring1 = pymunk.DampedSpring(
-            prebody[0], prebody[1], (0, 0), (0, 0), 1906/10, 1000, 500
-        )
-    spring2 = pymunk.DampedSpring(
-            prebody[0], prebody[2], (0, 0), (0, 0), 2324/10, 1000, 500
-        )
-    spring3 = pymunk.DampedSpring(
-            prebody[1], prebody[2], (0, 0), (0, 0), 1237/10, 1000, 500
-        )
-    prespace.add(spring1)
-    prespace.add(spring2)
-    prespace.add(spring3)
-    
-    # Running (displaying) the simulation and updating the pos of three fixed points
-    clock = pygame.time.Clock()
-    running = True
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-
-        prescreen.fill((255, 255, 255))
-        prespace.step(0.02)
-        prespace.debug_draw(pre_draw_options)
-        for i in range(3):
-            label = preset[i]
-            text_surface = font.render(label, True, (0, 0, 0))
-            prescreen.blit(text_surface, (prebody[i].position[0] - 10, prebody[i].position[1] - 10))
-        pygame.display.flip()
-        clock.tick(60)
-    pygame.quit()
-    for i in range(3) :
-        pos = prebody[i].position
-        index = dni[preset[i]]
-        pos_matrix[index] = pos
-    return pos_matrix
-
-'''

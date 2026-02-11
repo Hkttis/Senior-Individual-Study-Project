@@ -1,0 +1,70 @@
+"""scripts.ch5_bootstrap_stability
+
+Chapter 5 — Bootstrap stability test.
+
+Runs repeated physics simulations under small parameter jitters and visualizes
+uncertainty using:
+  - confidence ellipses
+  - combined KDE density map
+
+Usage
+-----
+python -m scripts.ch5_bootstrap_stability --n-bootstrap 300 --spring-jitter 0.05 --repulse-jitter 0.20
+
+Notes
+-----
+This script saves all artifacts under the repo-local output folder
+`<OUTPUT_DIR>/ch5/bootstrap/`.
+"""
+
+from __future__ import annotations
+
+import argparse
+
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser()
+    p.add_argument("--n-bootstrap", type=int, default=300)
+    p.add_argument("--spring-jitter", type=float, default=0.05)
+    p.add_argument("--repulse-jitter", type=float, default=0.20)
+    p.add_argument(
+        "--fixed",
+        type=str,
+        default="鄯善,都護治/烏壘",
+        help="Comma-separated anchor labels (must exist in ground truth).",
+    )
+    return p.parse_args()
+
+
+def main() -> None:
+    args = _parse_args()
+    fixed_point_labels = [x.strip() for x in args.fixed.split(",") if x.strip()]
+
+    # We call the updated bootstrap helpers (see library/bootstrap_and_visualization.py).
+    from library.bootstrap_and_visualization import bootstrap_dynamics, plot_multi_ellipses, plot_kde_combined
+    import numpy as np
+
+    from library.coordinates import flipping_y
+    from library.data_io import uploading_ground_truth, save_bootstrap_data
+    from library.config import refer_pos_sim
+
+    samples, vertice, dni = bootstrap_dynamics(
+        int(args.n_bootstrap),
+        float(args.spring_jitter),
+        float(args.repulse_jitter),
+        fixed_point_labels=fixed_point_labels,
+    )
+
+    # Save bootstrap samples for the interactive map.
+    # `save_bootstrap_data` expects positions in the *north-up* coordinate frame,
+    # so we convert our plotting samples (pygame y-down) back to y-up.
+    samples_y_up = np.asarray([flipping_y(s) for s in samples], dtype=float)
+    gt_lonlat = uploading_ground_truth(vertice, dni)
+    save_bootstrap_data(vertice, dni, samples_y_up, gt_lonlat, refer_pos=refer_pos_sim)
+
+    plot_multi_ellipses(samples, vertice)
+    plot_kde_combined(samples, vertice)
+
+
+if __name__ == "__main__":
+    main()

@@ -2,6 +2,7 @@ import numpy as np
 from library.geometry import *
 from library.data_io import *
 from library.config import km2pix, km2Li
+from library.units import gt_km2sim
 
 
 def generate_CHEN_initial_positions (refer_pos, fixed_point_labels, fixed_points_lonlat): # Initialize position of points from CHEN_STRESSMAJORIZATION/random positions
@@ -18,11 +19,16 @@ def generate_CHEN_initial_positions (refer_pos, fixed_point_labels, fixed_points
     
     
     
-    center_pos = [600,500]
+    center_pos = refer_pos
+    
     pos_matrix = shift(pos_matrix,2,center_pos)
     pos_matrix,fixed_positions_list = add_fixed_positions(dni,pos_matrix,refer_pos, fixed_point_labels, fixed_points_lonlat)
+    
+    
     ## pos_matrix = pre_physics_simulation(pos_matrix,dni) #pre_PS ensures the accuracy of pos of fixed points 
+
     return vertice,dni,data,pos_matrix,fixed_positions_list
+
 def construct_Chen_graph(data):
     countryset = set()
     for row in data :
@@ -59,15 +65,12 @@ def add_fixed_positions(dni, pos_matrix, refer_pos, fixed_point_labels, fixed_po
     
     gt_xy_km = lcc_transformation(dni, gt_lonlat)  # per-node list in km (None where missing)
     
-    for i in range(len(gt_xy_km)) :
-        x, y = gt_xy_km[i]
-        if x is not None and y is not None :
-            gt_xy_km[i] = [x*km2pix, y*km2pix] # turn km to pix
-    
+    gt_sim = gt_km2sim( gt_xy_km )
+
     fixed_positions_list = []
     for label in fixed_point_labels:
-        fixed_positions_list.append([label, gt_xy_km[dni[label]][0], gt_xy_km[dni[label]][1] ])  # placeholder for positions
-        pos_matrix[dni[label]] = [gt_xy_km[dni[label]][0] + refer_pos[0], gt_xy_km[dni[label]][1] + refer_pos[1]]
+        fixed_positions_list.append([label, gt_sim[dni[label]][0], gt_sim[dni[label]][1] ])  # placeholder for positions
+        pos_matrix[dni[label]] = [gt_sim[dni[label]][0] + refer_pos[0], gt_sim[dni[label]][1] + refer_pos[1]]
     
     
     return pos_matrix, fixed_positions_list

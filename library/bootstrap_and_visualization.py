@@ -21,8 +21,8 @@ from library.physics import *
 from library.initialization import *
 
 
-ELLIPSES_FILE        = "C:/Users/justi/Desktop/project/results/multi_confidence_ellipses.png"
-KDE_COMBINED_FILE    = "C:/Users/justi/Desktop/project/results/combined_kde_density.png"
+ELLIPSES_FILE        = "C:/Users/hktti/Desktop/project/results/multi_confidence_ellipses.png"
+KDE_COMBINED_FILE    = "C:/Users/hktti/Desktop/project/results/combined_kde_density.png"
 
 #-----------------run physics_simulation once (with different parameters)-------------
 def _run_once(seed: int,

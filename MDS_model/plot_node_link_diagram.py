@@ -8,7 +8,10 @@ from math import sqrt
 
 from library.config import km2pix, km2Li
 from library.data_io import uploading_directional_data
-from MDS_model.directed_mds_model import unit_direction_dict  # 東/西/南/北/東南/… 的單位向量
+from library.directions import DIR4_SIM, DIR4DIAG_RAW_SIM
+from library.directions import DIR8_UNIT_SIM as unit_direction_dict
+
+
 
 def wrong_directions_nonflip(pos_matrix, vertice, dni):
     
@@ -16,9 +19,10 @@ def wrong_directions_nonflip(pos_matrix, vertice, dni):
     
     '''direction_revising force'''
     # If we apply forces directory in direction of ideal directions, it will lead to equalibriam. 
-    # y-axis is toward negative side
-    direction_dict = {'東':np.array([1,0]), '西':np.array([-1,0]), '北':np.array([0,1]), '南':np.array([0,-1])}
-    direction_dict2 = {'東南':np.array([1,1]), '西北':np.array([-1,-1]), '東北':np.array([1,-1]), '西南':np.array([-1,1])}
+   
+    direction_dict = DIR4_SIM
+    direction_dict2 = DIR4DIAG_RAW_SIM
+
     wrong_direction_lists = []
     for row in directional_data :
         # calculate the distance vector between nodes
@@ -48,8 +52,8 @@ def wrong_directions_flip(pos_matrix, vertice, dni):
     # If we apply forces directory in direction of ideal directions, it will lead to equalibriam. 
     # y-axis is toward negative side
     # y-axis is toward negative side
-    direction_dict = {'東':np.array([1,0]), '西':np.array([-1,0]), '北':np.array([0,-1]), '南':np.array([0,1])}
-    direction_dict2 = {'東南':np.array([1,1]), '西北':np.array([-1,-1]), '東北':np.array([1,-1]), '西南':np.array([-1,1])}
+    direction_dict = DIR4_SIM
+    direction_dict2 = DIR4DIAG_RAW_SIM
     wrong_direction_lists = []
     for row in directional_data :
         # calculate the distance vector between nodes
@@ -76,9 +80,9 @@ def directional_stress_nonflip(pos_matrix, vertice, dni):
     dir_stress = 0
     directional_data = uploading_directional_data()
     
-    # y-axis is toward negative side
-    direction_dict = {'東':np.array([1,0]), '西':np.array([-1,0]), '北':np.array([0,1]), '南':np.array([0,-1])}
-    direction_dict2 = {'東南':np.array([1,1]), '西北':np.array([-1,-1]), '東北':np.array([1,-1]), '西南':np.array([-1,1])}
+    direction_dict = DIR4_SIM
+    direction_dict2 = DIR4DIAG_RAW_SIM
+    
     wrong_direction_lists = []
     for row in directional_data :
         # calculate the distance vector between nodes

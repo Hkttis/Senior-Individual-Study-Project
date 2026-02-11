@@ -7,6 +7,8 @@ from library.data_io import uploading_ground_truth
 from library.visualization import *
 from library.physics import *
 from library.initialization import *
+from library.units import pos_matrix_sim2km, data_Li2sim
+from library.coordinates import flipping_y
 
 from MDS_model.data_pre_processing import *
 from MDS_model.stress_majorization_mds_model import *
@@ -16,9 +18,9 @@ from MDS_model.plot_node_link_diagram import *
 
 
 def run_directed_MDS( vis = True ):
-    datanum = ["C:\\Users\\justi\Desktop\\project\\csv doc utf8\\GPT-4_史記_numerals_utf8.csv",
-    "C:\\Users\\justi\Desktop\\project\\csv doc utf8\\GPT-4_漢書_numerals_utf8.csv",
-    "C:\\Users\\justi\Desktop\\project\\csv doc utf8\\GPT-4_後漢書_numerals_utf8.csv"]
+    datanum = ["C:\\Users\\hktti\Desktop\\project\\csv doc utf8\\GPT-4_史記_numerals_utf8.csv",
+    "C:\\Users\\hktti\Desktop\\project\\csv doc utf8\\GPT-4_漢書_numerals_utf8.csv",
+    "C:\\Users\\hktti\Desktop\\project\\csv doc utf8\\GPT-4_後漢書_numerals_utf8.csv"]
     pre_data = read_csvfile(datanum)
     c_data,disset = data_process(pre_data)
     
@@ -48,6 +50,7 @@ def run_directed_MDS( vis = True ):
         # Turn Li to pixel units
         # directed_MDS should not apply procrustes analysis 
         pos_matrix = alignment_and_scaling(pos_matrix, vertice, dni, refer_pos=[600,500])
+        pos_matrix = flipping_y(pos_matrix)
         visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, zoom_area = None , file_name = "DirectedMDS_")
         #visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, zoom_area = (200, 200, 800, 400) , file_name = "DirectedMDS_")
         ground_truth_comparison(vertice,dni,data, uploading_ground_truth(vertice,dni),pos_matrix[dni["鄯善"]], deepcopy(pos_matrix), file_name = "DirectedMDS_")
@@ -60,12 +63,15 @@ def run_stress_majorization( vis = True ):
     
     if vis == True :
         plot_stress_convergence_log(stress_history, file_name = "StressMj_")
-        draw_node_link_pygame(pos_matrix, vertice, edges)
-        animate_node_link_pygame( pos_history, vertice, edges)
+        draw_node_link_pygame(flipping_y(pos_matrix), vertice, edges)
+        animate_node_link_pygame( [flipping_y(pos) for pos in pos_history], vertice, edges)
         
         wrong_directions_list = wrong_directions_nonflip(pos_matrix, vertice, dni)
         # Turn Li to pixel units
-        pos_matrix = alignment_and_scaling(pos_matrix, vertice, dni, refer_pos=[600,500])
+
+
+
+        pos_matrix = alignment_and_scaling(pos_matrix, vertice, dni, refer_pos=[600,500], y_down = False)
         
         # temporalily use ground truth to simulate given fixed points' positions
         fixed_point_labels = ["鄯善","都護治/烏壘"]
@@ -73,7 +79,11 @@ def run_stress_majorization( vis = True ):
         fixed_point_lonlat = [ tuple(gt[dni[cout]]) for cout in fixed_point_labels]
         
         
+
         pos_matrix = procrustes_align_by_fixed_points(deepcopy(pos_matrix), fixed_point_labels, fixed_point_lonlat, dni)
+        
+        pos_matrix = flipping_y(pos_matrix)
+
         visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, file_name = "StressMj_")
         ground_truth_comparison(vertice,dni,data, uploading_ground_truth(vertice,dni),pos_matrix[dni["鄯善"]], deepcopy(pos_matrix), file_name = "StressMj_")
     
@@ -163,6 +173,10 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
     """
     # Static data (same across runs)
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
+    #TODO need to transform the units of data here
+    
+    data = data_Li2sim(data)
+    
     gt_lonlat = uploading_ground_truth(vertice, dni)
 
     # Running means of histories (in pixel units)
@@ -187,7 +201,7 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
         all_pos_hist_sm_px.append(pos_hist_sm_px)
         mean_hist_sm = _running_mean_history(mean_hist_sm, pos_hist_sm_px, i)
         last_sm = deepcopy(pos_hist_sm_px[-1])
-        ks_sm.append(float(calculate_kruskals_stress(dni, deepcopy([list(p) for p in last_sm]), data)))
+        ks_sm.append(float(calculate_kruskals_stress(dni, pos_matrix_sim2km(deepcopy([list(p) for p in last_sm])), data)))
         rmse_sm.append(rmse_km_from_pixels(last_sm, refer_pos, dni, gt_lonlat))
 
         # ---------------- Directed MDS -----------------------
@@ -196,7 +210,7 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
         all_pos_hist_dm_px.append(pos_hist_dm_px)
         mean_hist_dm = _running_mean_history(mean_hist_dm, pos_hist_dm_px, i)
         last_dm = deepcopy(pos_hist_dm_px[-1])
-        ks_dm.append(float(calculate_kruskals_stress(dni, deepcopy([list(p) for p in last_dm]), data)))
+        ks_dm.append(float(calculate_kruskals_stress(dni, pos_matrix_sim2km(deepcopy([list(p) for p in last_dm])), data)))
         rmse_dm.append(rmse_km_from_pixels(last_dm, refer_pos, dni, gt_lonlat))
 
         # ---------------- Physics Simulation ----------------
@@ -205,7 +219,7 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
         all_pos_hist_ph_px.append(pos_hist_ph_px)
         mean_hist_ph = _running_mean_history(mean_hist_ph, pos_hist_ph_px, i)
         last_ph = deepcopy(pos_hist_ph_px[-1])
-        ks_ph.append(float(calculate_kruskals_stress(dni, deepcopy([list(p) for p in last_ph]), data)))
+        ks_ph.append(float(calculate_kruskals_stress(dni, pos_matrix_sim2km(deepcopy([list(p) for p in last_ph])), data)))
         rmse_ph.append(rmse_km_from_pixels(last_ph, refer_pos, dni, gt_lonlat))
 
         if verbose:

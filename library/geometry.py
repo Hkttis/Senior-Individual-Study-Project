@@ -44,7 +44,7 @@ def lcc_transformation(dni, ground_truth_positions):
         if x==None and y==None :
             lcc_xy_km.append((None,None))
         else :
-            lcc_xy_km.append(((x-align_pos[0])/1000 , -(y-align_pos[1])/1000)) # we use (-y) since the coordinates in pygame is different
+            lcc_xy_km.append(((x-align_pos[0])/1000 , (y-align_pos[1])/1000))
     return lcc_xy_km
 
 def inverse_lcc_transformation(lcc_xy_km, wgs_align_pos):
@@ -78,7 +78,7 @@ def inverse_lcc_transformation(lcc_xy_km, wgs_align_pos):
         else:
             # Undo km to meter and reverse the alignment
             x_m = x_km * 1000 + align_pos[0]
-            y_m = -y_km * 1000 + align_pos[1]  # Note the negative to invert pygame Y
+            y_m = y_km * 1000 + align_pos[1] 
             lon, lat = transformer.transform(x_m, y_m)
             recovered_latlon.append((lon, lat))
     

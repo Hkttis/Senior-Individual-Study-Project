@@ -1,6 +1,7 @@
 import csv
 from library.config import *
 from library.geometry import inverse_lcc_transformation
+from library.anchor_frame import px_list_to_km_list
 from library.config import km2pix, km2Li
 
 # data input
@@ -43,10 +44,9 @@ def uploading_ground_truth(vertice,dni) :
     return ground_truth_positions
 
 def save_vis_data(vertice, dni, pos_matrix, ground_truth_positions, refer_pos):
-    pos_matrix_km = []
-    for pos in pos_matrix :
-        pos_matrix_km.append(((pos[0]-refer_pos[0]) / km2pix,(pos[1]-refer_pos[1]) / km2pix))
-    wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km,ground_truth_positions[dni["鄯善"]])
+    pos_matrix_km = px_list_to_km_list(pos_matrix, tuple(refer_pos), km2pix)
+    wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km, ground_truth_positions[dni["鄯善"]])
+
     vis_data = []
     for i,label in enumerate(vertice) :
         vis_data.append( (label, wgs_pos_matrix[i][0], wgs_pos_matrix[i][1]) )
@@ -55,11 +55,15 @@ def save_vis_data(vertice, dni, pos_matrix, ground_truth_positions, refer_pos):
         writer.writerows(vis_data)
 
 def save_bootstrap_data(vertice, dni, samples, ground_truth_positions, refer_pos):
+
+    
     pos_matrix_km = []
     for pos_matrix_sample in samples :
-        for pos in pos_matrix_sample :
-            pos_matrix_km.append(((pos[0]-refer_pos[0]) / km2pix,(pos[1]-refer_pos[1]) / km2pix))
+        pos_matrix_sample_km = px_list_to_km_list(pos_matrix_sample, tuple(refer_pos), km2pix)
+        for pos in pos_matrix_sample_km :
+            pos_matrix_km.append(pos)
     wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km,ground_truth_positions[dni["鄯善"]])
+
     bootstrap_data = []
     countries_N = len(vertice)
     for i,pos in enumerate(wgs_pos_matrix) :
@@ -70,10 +74,9 @@ def save_bootstrap_data(vertice, dni, samples, ground_truth_positions, refer_pos
         writer.writerows(bootstrap_data)
 
 def save_err_data(vertice, dni, pos_matrix, ground_truth_positions, refer_pos, errors, edge_labels):
-    pos_matrix_km = []
-    for pos in pos_matrix :
-        pos_matrix_km.append(((pos[0]-refer_pos[0]) / km2pix,(pos[1]-refer_pos[1]) / km2pix))
-    wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km,ground_truth_positions[dni["鄯善"]])
+    pos_matrix_km = px_list_to_km_list(pos_matrix, tuple(refer_pos), km2pix)
+    wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km, ground_truth_positions[dni["鄯善"]])
+
     
     err_data = []
     for i, (error_rate, (l1, l2)) in enumerate(zip(errors, edge_labels)) :
@@ -487,7 +490,7 @@ def classify_nodes():
 
         
 '''
-Given the file path : "C:/Usersjusti/Desktop/project/results/visualization_data.json"
+Given the file path : "C:/Usershktti/Desktop/project/results/visualization_data.json"
 
 I want to make a function save_visualization_data(
 '''
