@@ -888,6 +888,7 @@ def _compute_force_scalar_sum(
     rough_direction_cos_threshold: float = math.cos(math.pi/4), # ~0.707 (45°)
     diagonal_cos_threshold: float = math.cos(math.pi/8),  # ~0.9239 (stricter than 0.707)
 ) -> np.ndarray:
+    
     """
     Return per-node scalar 'temperature' = sum of magnitudes of all forces
     acting on the node (repulsion + spring + directional). NO vector summation.
@@ -1009,7 +1010,6 @@ def plot_force_heatmap_scalar_sum(
         min_distance=min_distance,
         include_spring=include_spring,
         rest_length_policy=rest_length_policy,
-        length_scale_km2px=length_scale_km2px,
         include_directional=include_directional,
         directional_force_magnitude=directional_force_magnitude,
         rough_direction_cos_threshold = rough_direction_cos_threshold,

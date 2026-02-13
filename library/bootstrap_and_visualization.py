@@ -19,6 +19,7 @@ from library.geometry import *
 from library.visualization import *
 from library.physics import *
 from library.initialization import *
+from library.coordinates import flipping_y
 
 
 ELLIPSES_FILE        = "C:/Users/hktti/Desktop/project/results/multi_confidence_ellipses.png"
@@ -27,14 +28,15 @@ KDE_COMBINED_FILE    = "C:/Users/hktti/Desktop/project/results/combined_kde_dens
 #-----------------run physics_simulation once (with different parameters)-------------
 def _run_once(seed: int,
               k_spring_scale: float = 1.0,
-              k_repulse_scale: float = 1.0):
+              k_repulse_scale: float = 1.0,
+              fixed_point_labels  = ["鄯善","都護治/烏壘"] , fixed_points_lonlat = [(0.0,0.0), (0.0,0.0)] ):
     """
     使用給定 seed 和 jitter 比例執行一次 spring 模擬，返回最終位置與節點名稱。
     """
     np.random.seed(seed)
+
     vertice, dni, data, pos_matrix, fixed_pos = \
-        generate_CHEN_initial_positions([600, 500])
-    
+        generate_CHEN_initial_positions(refer_pos_sim, fixed_point_labels = fixed_point_labels, fixed_points_lonlat = fixed_points_lonlat)
     global SPRING_STIFFNESS_BASE, REPULSION_STRENGTH_BASE, DIRECTIONAL_FORCE_MAGNITUDE_BASE
     spring_stiffness = SPRING_STIFFNESS_BASE
     repulsion_strength = REPULSION_STRENGTH_BASE
@@ -43,23 +45,28 @@ def _run_once(seed: int,
     repulsion_strength *= k_repulse_scale
     
     dir_data = uploading_directional_data()
-    _wrong, sh, final_pos = main_physics_simulation(
-        vertice, dni, data, deepcopy(pos_matrix), dir_data, fixed_pos, spring_stiffness, repulsion_strength, directional_force_magnitude)
+    _wrong, sh, ph, final_pos = main_physics_simulation(
+        vertice, dni, data_Li2sim(data), deepcopy(pos_matrix), dir_data, fixed_pos, spring_stiffness, repulsion_strength, directional_force_magnitude)
+    
     return np.asarray(final_pos), vertice, dni
 
 #------------------bootstrap_dynamics-----------------------
-def bootstrap_dynamics(N_BOOTSTRAP,SPRING_JITTER,REPULSE_JITTER):
+def bootstrap_dynamics(N_BOOTSTRAP,SPRING_JITTER,REPULSE_JITTER, fixed_point_labels, fixed_points_lonlat):
     """
     執行多次模擬，返回所有樣本、平均與協方差矩陣。
     """
-    first_pos, vertice, dni = _run_once(0, 1.0, 1.0)
+
+    first_pos, vertice, dni = _run_once(0, 1.0, 1.0, fixed_point_labels, fixed_points_lonlat)
     N_nodes = first_pos.shape[0]
     samples = np.zeros((N_BOOTSTRAP, N_nodes, 2))
     samples[0] = first_pos
+
+    
+
     for b in trange(1, N_BOOTSTRAP, desc="Bootstrap"):
         ks = np.random.normal(1.0, SPRING_JITTER/2) # mean = 1, std = spring_jilter/2
         kr = np.random.normal(1.0, REPULSE_JITTER/2 )
-        pos, _, _ = _run_once(b, ks, kr)
+        pos, _, _ = _run_once(b, ks, kr, fixed_point_labels, fixed_points_lonlat)
         samples[b] = pos
     return samples, vertice, dni
 
@@ -106,7 +113,7 @@ def plot_multi_ellipses(samples, vertice):
         ax.text(mean[0] + 3, mean[1] - 3, name,
                 color=colors[name], fontsize=7)
     ax.set_xlim(0, 1200)
-    ax.set_ylim(750, 0)
+    ax.set_ylim(0, 750)
     ax.set_aspect('equal')
     ax.set_title('95/90/85% Confidence Ellipses')
     plt.tight_layout()
@@ -139,7 +146,6 @@ def plot_kde_combined(samples, vertice):
 
     # 2. 把 Pygame 的 y 座標翻轉成左下為原點
     samples_flipped = samples.copy()
-    samples_flipped[:, :, 1] = 750.0 - samples_flipped[:, :, 1]
 
     # 3. 建立全螢幕網格 (200×200)，範圍從 x=0→1200, y=0→750
     xmin, xmax = 0.0, 1200.0

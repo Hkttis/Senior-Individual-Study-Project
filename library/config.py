@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict
+import math
 
 # --- Project paths --------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -84,8 +85,10 @@ MIN_DISTANCE_BASE: float = 0.1
 RESISTANCE_BASE: float = 10.0
 
 # Stop criteria (physics simulation main loop)
-stop_physim_iteration_time: int = 2000
+stop_physim_iteration_time: int = 1000
 
+theta_thr_4dir = math.pi/2
+theta_thr_8dir = math.pi/4
 
 
 Li2sim = 1/10

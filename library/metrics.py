@@ -19,14 +19,14 @@ def stress_function(data,dni,pos_matrix) : # data units : km
     return stress
 
 
-def calculate_kruskals_stress(dni,pos_matrix,data) : # data units : km
+def calculate_kruskals_stress(dni,pos_matrix,data) : # pos_matrix units = km, data units = sim
     error_square = 0
     dis_square = 0
     for row in data :
         p1 = pos_matrix[dni[row[0]]]
         p2 = pos_matrix[dni[row[1]]]
         actual_dis = np.sqrt( (p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
-        ideal_dis = float(row[2]) / Li2km
+        ideal_dis = float(row[2]) / km2sim
         error_square += (actual_dis-ideal_dis)**2
         dis_square += actual_dis**2
     kruskal_stress = np.sqrt(error_square/dis_square)
@@ -213,7 +213,8 @@ def alignment_and_scaling(pos_matrix, vertice, dni, refer_pos, y_down=True):
     # Be aware of the y-axis direction is flipped in pygame
     if y_down :
         flip = flipping_y(scaled)
-
+    else :
+        flip = scaled
     # 2) Compute translation so '鄯善' lands at refer_pos
     anchor_x, anchor_y = flip[anchor_idx]
     dx = refer_pos[0] - anchor_x

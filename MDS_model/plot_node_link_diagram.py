@@ -6,7 +6,7 @@ import pygame
 import numpy as np
 from math import sqrt
 
-from library.config import km2pix, km2Li
+from library.config import km2pix, km2Li, theta_thr_4dir, theta_thr_8dir
 from library.data_io import uploading_directional_data
 from library.directions import DIR4_SIM, DIR4DIAG_RAW_SIM
 from library.directions import DIR8_UNIT_SIM as unit_direction_dict
@@ -34,12 +34,12 @@ def wrong_directions_nonflip(pos_matrix, vertice, dni):
         pos_vector = pos_vector / np.linalg.norm(pos_vector) # unit vector
         if row[2] in direction_dict : # for those with rough direction only (東南西北), theta must smaller than pi/4
             cos_similarity = np.dot(pos_vector,direction_dict[row[2]])
-            if np.dot(pos_vector,direction_dict[row[2]]) < 0 : # 1/sqrt(2) : # apply force if being on the wrong direction
+            if np.dot(pos_vector,direction_dict[row[2]]) < math.cos(theta_thr_4dir) : # 1/sqrt(2) : # apply force if being on the wrong direction
                 wrong_direction_lists.append(row)
                 
         else : # for those with more specific direction (東南、西北), the cos(theta) between directional vector and pos_vector must be over cos(pi/8)
             cos_similarity = np.dot(pos_vector,direction_dict2[row[2]])/sqrt(2)
-            if cos_similarity < 1/sqrt(2):  # 0.924 : theta > pi/8
+            if cos_similarity < math.cos(theta_thr_8dir):  # 0.924 : theta > pi/8
                 wrong_direction_lists.append(row)
         
     return wrong_direction_lists

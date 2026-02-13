@@ -58,7 +58,7 @@ from library.coordinates import flipping_y
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
-    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--seed", type=int, default=None)
     p.add_argument(
         "--fixed",
         type=str,

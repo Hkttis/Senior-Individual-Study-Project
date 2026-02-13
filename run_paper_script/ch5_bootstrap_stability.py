@@ -19,6 +19,7 @@ This script saves all artifacts under the repo-local output folder
 
 from __future__ import annotations
 
+
 import argparse
 
 
@@ -44,26 +45,31 @@ def main() -> None:
     from library.bootstrap_and_visualization import bootstrap_dynamics, plot_multi_ellipses, plot_kde_combined
     import numpy as np
 
-    from library.coordinates import flipping_y
     from library.data_io import uploading_ground_truth, save_bootstrap_data
-    from library.config import refer_pos_sim
+    from library.config import refer_pos_sim, refer_pos, FILE_PATHS
+    from library.initialization import load_ini_data_from_csv
+    from library.coordinates import flipping_y
+
+    _graph, vertice, dni, _edges, data = load_ini_data_from_csv(FILE_PATHS)
+    gt_lonlat = uploading_ground_truth(vertice, dni)
+    fixed_points_lonlat = [tuple(gt_lonlat[dni[name]]) for name in fixed_point_labels]
 
     samples, vertice, dni = bootstrap_dynamics(
         int(args.n_bootstrap),
         float(args.spring_jitter),
         float(args.repulse_jitter),
         fixed_point_labels=fixed_point_labels,
+        fixed_points_lonlat=fixed_points_lonlat
     )
-
     # Save bootstrap samples for the interactive map.
     # `save_bootstrap_data` expects positions in the *north-up* coordinate frame,
     # so we convert our plotting samples (pygame y-down) back to y-up.
-    samples_y_up = np.asarray([flipping_y(s) for s in samples], dtype=float)
+    samples_y_up = np.asarray([s for s in samples], dtype=float)
     gt_lonlat = uploading_ground_truth(vertice, dni)
     save_bootstrap_data(vertice, dni, samples_y_up, gt_lonlat, refer_pos=refer_pos_sim)
 
-    plot_multi_ellipses(samples, vertice)
-    plot_kde_combined(samples, vertice)
+    plot_multi_ellipses(samples_y_up, vertice)
+    plot_kde_combined(samples_y_up, vertice)
 
 
 if __name__ == "__main__":

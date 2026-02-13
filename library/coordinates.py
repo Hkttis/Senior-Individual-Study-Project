@@ -14,7 +14,7 @@ height = _H
 
 Vec2 = Tuple[float, float]
 
-def flipping_y(pos_matrix: Iterable[Vec2]) -> List[List[float]]:
+def flipping_y(pos_matrix: Iterable[Vec2], height = height) -> List[List[float]]:
     """Flip y using screen height: (x, y) -> (x, height - y).
     """
     return [[float(x), float(height) - float(y)] for (x, y) in pos_matrix]

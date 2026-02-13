@@ -42,6 +42,9 @@ def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_p
         screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix, plot
     )
 
+    pygame.display.quit()
+    pygame.quit()
+
     return wrong_direction_lists,stress_history,pos_history,pos_matrix
 
 
@@ -156,8 +159,8 @@ def apply_forces(min_distance,repulsion_strength,resistance,directional_force_ma
 
     # --- 2) directional hinge force (Updated: Angular Hinge) ---
     # 定義容忍角度 (以 radians 為單位)
-    theta_h_4 = math.pi / 2.0 
-    theta_h_8 = math.pi / 4.0  
+    theta_h_4 = theta_thr_4dir
+    theta_h_8 = theta_thr_4dir
     eps = 1e-9
 
     cnt = 0

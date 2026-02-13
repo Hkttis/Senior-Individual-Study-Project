@@ -12,7 +12,7 @@ Then visualizes convergence (stress + RMSE bands) using:
 
 Usage
 -----
-python -m scripts.ch5_compare_models_convergence --seed 0
+python -m run_paper_script.paper_run ch5-compare --seed 37
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ def main() -> None:
         spring_stiffness=SPRING_STIFFNESS_BASE,
         repulsion_strength=REPULSION_STRENGTH_BASE,
         directional_force_magnitude=DIRECTIONAL_FORCE_MAGNITUDE_BASE,
-        plot=False,
+        plot=True,
     )
 
     # 2) Baseline histories (Li units)

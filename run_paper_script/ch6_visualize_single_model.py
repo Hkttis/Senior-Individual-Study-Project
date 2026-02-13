@@ -5,6 +5,7 @@ Chapter 6 — Figure generation utilities.
 This script produces the *single-model* visualizations used in the paper:
 
   1) Stress convergence curve                (plot_stress_convergence_log)
+  # tmp not ot draw stress convergence curve here 
   2) Distance-error heatmap (full & zoomed)  (visualize_error_map_official)
   3) Ground-truth overlay & RMSE             (ground_truth_comparison)
   4) Force heatmap (scalar magnitude sum)    (plot_force_heatmap_scalar_sum)
@@ -30,7 +31,7 @@ from typing import List
 
 import numpy as np
 
-from library.config import FILE_PATHS, refer_pos_screen, refer_pos_sim
+from library.config import FILE_PATHS, refer_pos_screen, refer_pos_sim, refer_pos
 from library.data_io import load_ini_data_from_csv, uploading_ground_truth, uploading_directional_data, save_vis_data, save_err_data
 from library.units import data_Li2sim
 from library.coordinates import flipping_y
@@ -121,14 +122,14 @@ def _run_baseline(model: str, fixed_point_labels: List[str]):
         pos_hist_li = run_stress_majorization(vis=False)
         pos_last_li = deepcopy(pos_hist_li[-1])
         wrong_direction_lists = wrong_directions_nonflip(pos_last_li, vertice, dni)
-        pos_px = alignment_and_scaling(pos_last_li, vertice, dni, refer_pos=list(refer_pos_screen))
-        pos_px = procrustes_align_by_fixed_points(deepcopy(pos_px), fixed_point_labels, fixed_points_lonlat, dni)
+        pos_px = alignment_and_scaling(pos_last_li, vertice, dni, refer_pos=list(refer_pos_sim), y_down=False)
+        pos_px = procrustes_align_by_fixed_points(deepcopy(pos_px), fixed_point_labels, fixed_points_lonlat, dni, refer_pos = refer_pos_sim)
         stress_history = []
     else:
         pos_hist_li = run_directed_MDS(vis=False)
         pos_last_li = deepcopy(pos_hist_li[-1])
         wrong_direction_lists = wrong_directions_nonflip(pos_last_li, vertice, dni)
-        pos_px = alignment_and_scaling(pos_last_li, vertice, dni, refer_pos=list(refer_pos_screen))
+        pos_px = alignment_and_scaling(pos_last_li, vertice, dni, refer_pos=list(refer_pos_sim), y_down=False)
         stress_history = []
 
     directional_data = uploading_directional_data()
@@ -145,12 +146,12 @@ def main() -> None:
             seed=args.seed, fixed_point_labels=fixed_point_labels
         )
         file_prefix = f"PhysicsSim_seed{args.seed}_"
-        # 1) Stress curve
-        plot_stress_convergence_log(stress_hist, file_name=file_prefix)
+        # plot_stress_convergence_log(stress_hist, file_name=file_prefix)
     else:
         vertice, dni, edges, data, gt_lonlat, directional_data, wrong_dir, _stress_hist, pos_px = _run_baseline(
             args.model, fixed_point_labels
         )
+        pos_px = flipping_y(pos_px)
         file_prefix = f"{args.model}_"
 
     # 2) Error map (full + zoom)
@@ -167,11 +168,10 @@ def main() -> None:
         dni,
         data_Li2sim(data),
         deepcopy(gt_lonlat),
-        deepcopy(refer_pos_screen),
+        pos_px[dni["鄯善"]],
         deepcopy(pos_px),
         file_name=file_prefix,
     )
-
     # 4) Force heatmap (recommended for physics)
     if not args.skip_heatmap:
         plot_force_heatmap_scalar_sum(
@@ -185,8 +185,7 @@ def main() -> None:
             show_points=True,
             window_caption=f"Force Heatmap ({args.model})",
         )
-
-    # 5) Node-link diagram
+    # 5) Node-link diagram 
     if not args.skip_nodelink:
         draw_node_link_pygame(
             pos=[(float(x), float(y)) for x, y in pos_px],
