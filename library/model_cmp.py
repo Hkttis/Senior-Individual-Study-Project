@@ -4,7 +4,7 @@ import builtins
 from library.geometry import *
 from library.metrics import *
 from library.config import km2pix, km2Li, refer_pos, FILE_PATHS
-from library.data_io import uploading_ground_truth
+from library.data_io import uploading_ground_truth, uploading_directional_data
 from library.visualization import *
 from library.physics import *
 from library.initialization import *
@@ -174,6 +174,7 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
     data = data_Li2sim(data)
     
     gt_lonlat = uploading_ground_truth(vertice, dni)
+    directional_data = uploading_directional_data()
 
     # Running means of histories (in pixel units)
     mean_hist_sm = None
@@ -184,6 +185,12 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
     ks_sm, rmse_sm = [], []
     ks_dm, rmse_dm = [], []
     ks_ph, rmse_ph = [], []
+
+    # [ADD] Direction metrics per run
+    vr_sm, mae_sm = [], []
+    vr_dm, mae_dm = [], []
+    vr_ph, mae_ph = [], []
+
     
     all_pos_hist_sm_px = []
     all_pos_hist_dm_px = []
@@ -199,6 +206,9 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
         last_sm = deepcopy(pos_hist_sm_px[-1])
         ks_sm.append(float(calculate_kruskals_stress(dni, deepcopy(pos_matrix_sim2km(last_sm)), data)))
         rmse_sm.append(rmse_km_from_pixels(last_sm, refer_pos, dni, gt_lonlat))
+        vr_sm.append(direction_violation_rate(np.asarray(last_sm, dtype=float), directional_data, dni))
+        mae_sm.append(mean_angular_error_violations(np.asarray(last_sm, dtype=float), directional_data, dni))
+
 
         # ---------------- Directed MDS -----------------------
         pos_hist_dm_li = run_directed_MDS(vis=False)                          # history in Li units
@@ -208,6 +218,9 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
         last_dm = deepcopy(pos_hist_dm_px[-1])
         ks_dm.append(float(calculate_kruskals_stress(dni, deepcopy(pos_matrix_sim2km(last_dm)), data)))
         rmse_dm.append(rmse_km_from_pixels(last_dm, refer_pos, dni, gt_lonlat))
+        vr_dm.append(direction_violation_rate(np.asarray(last_dm, dtype=float), directional_data, dni))
+        mae_dm.append(mean_angular_error_violations(np.asarray(last_dm, dtype=float), directional_data, dni))
+
 
         # ---------------- Physics Simulation ----------------
         pos_hist_ph_px = run_physics_simulation_model(fixed_point_labels, fixed_point_lonlat, vis = False)    # history already in pixels
@@ -217,6 +230,10 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
         last_ph = deepcopy(pos_hist_ph_px[-1])
         ks_ph.append(float(calculate_kruskals_stress(dni, deepcopy(pos_matrix_sim2km(last_ph)), data)))
         rmse_ph.append(rmse_km_from_pixels(last_ph, refer_pos, dni, gt_lonlat))
+        last_ph_np = np.array([(p[0], p[1]) for p in last_ph], dtype=float)
+        vr_ph.append(direction_violation_rate(last_ph_np, directional_data, dni))
+        mae_ph.append(mean_angular_error_violations(last_ph_np, directional_data, dni))
+
 
         if verbose:
             print(f"[Progress] Completed {i+1}/{n_runs} runs")
@@ -226,14 +243,20 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
         "StressMajorization": {
             "Kruskal": _series_stats(ks_sm),
             "RMSE_km": _series_stats(rmse_sm),
+            "VR": _series_stats(vr_sm),
+            "MAE_theta": _series_stats(mae_sm),
         },
         "DirectedMDS": {
             "Kruskal": _series_stats(ks_dm),
             "RMSE_km": _series_stats(rmse_dm),
+            "VR": _series_stats(vr_dm),
+            "MAE_theta": _series_stats(mae_dm),
         },
         "PhysicsSim": {
             "Kruskal": _series_stats(ks_ph),
             "RMSE_km": _series_stats(rmse_ph),
+            "VR": _series_stats(vr_ph),
+            "MAE_theta": _series_stats(mae_ph),
         },
     }
 
@@ -249,6 +272,14 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
     for k, v in stats.items():
         print(f"{k:>18}: {_fmt(v['RMSE_km'])}")
 
+    print("\n=== Summary (Direction Violation Rate) ===")
+    for k, v in stats.items():
+        print(f"{k:>18}: {_fmt(v['VR'])}")
+
+    print("\n=== Summary (Mean Angular Error, violations) ===")
+    for k, v in stats.items():
+        print(f"{k:>18}: {_fmt(v['MAE_theta'])}")
+
     # Convert running means back to lists for return
     to_list = lambda H: None if H is None else [h.tolist() for h in H]
 
@@ -262,6 +293,8 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
         "per_run": {
             "Kruskal": {"SM": ks_sm, "DM": ks_dm, "PH": ks_ph},
             "RMSE_km": {"SM": rmse_sm, "DM": rmse_dm, "PH": rmse_ph},
+            "VR": {"SM": vr_sm, "DM": vr_dm, "PH": vr_ph},
+            "MAE_theta": {"SM": mae_sm, "DM": mae_dm, "PH": mae_ph},
         },
         "all_pos_history_px": {
             "StressMajorization": all_pos_hist_sm_px,

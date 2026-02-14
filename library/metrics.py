@@ -1,11 +1,16 @@
 import math
 import numpy as np
+from copy import deepcopy
+import builtins
+
 from library.units import *
 from library.data_io import uploading_ground_truth
 from library.anchor_frame import px_list_to_km_list
 from library.geometry import lcc_transformation
 from library.coordinates import flipping_y
-from copy import deepcopy
+from library.config import theta_thr_4dir, theta_thr_8dir
+from library.directions import DIR4_SIM, DIR8_UNIT_SIM
+
 
 def stress_function(data,dni,pos_matrix) : # data units : km
     stress = 0
@@ -246,3 +251,102 @@ def rmse_km_from_pixels(pos_px, refer_pos, dni, gt_lonlat):
         dx, dy = sx - gx, sy - gy
         se.append(dx * dx + dy * dy)
     return math.sqrt(sum(se) / len(se)) if se else float("nan")
+
+
+# =========================================================
+# Direction error metrics (Angular hinge / atan2-based)
+# =========================================================
+
+def _direction_violation_deltas(pos_matrix_px, directional_data, dni, eps=1e-9):
+    """
+    Internal helper:
+    Iterate directional constraints and compute deltas:
+      phi = atan2(cross, dot) in (-pi, pi]
+      delta = max(0, abs(phi) - theta_h)
+    Returns:
+      total_valid_edges, n_violations, deltas(list of delta for violated edges)
+    """
+    # pos_matrix_px is expected to be (n,2) in y-up; be tolerant to list/Vec2d input
+    try:
+        pos = np.asarray(pos_matrix_px, dtype=float)
+        if pos.ndim != 2 or pos.shape[1] != 2:
+            raise ValueError
+    except Exception:
+        # fallback for e.g. list of Vec2d
+        pos = np.array([(p[0], p[1]) for p in pos_matrix_px], dtype=float)
+
+    total = 0
+    n_viol = 0
+    deltas = []
+
+    for row in directional_data:
+        # row format: [u_name, v_name, direction_name, ...]
+        if row is None or len(row) < 3:
+            continue
+
+        u_name = row[0]
+        v_name = row[1]
+        d_name = str(row[2]).strip()
+
+        if (u_name not in dni) or (v_name not in dni):
+            continue
+        if d_name not in DIR8_UNIT_SIM:
+            continue
+
+        iu = dni[u_name]
+        iv = dni[v_name]
+        if iu < 0 or iv < 0 or iu >= pos.shape[0] or iv >= pos.shape[0]:
+            continue
+
+        rx = float(pos[iv, 0] - pos[iu, 0])
+        ry = float(pos[iv, 1] - pos[iu, 1])
+        dist = math.hypot(rx, ry)
+        if dist < eps:
+            continue
+
+        r_hat_x = rx / dist
+        r_hat_y = ry / dist
+
+        v_dir = DIR8_UNIT_SIM[d_name]
+        v_x = float(v_dir[0])
+        v_y = float(v_dir[1])
+
+        # dot = cos(phi), cross = sin(phi) (2D cross z-component)
+        d_val = r_hat_x * v_x + r_hat_y * v_y
+        c_val = r_hat_x * v_y - r_hat_y * v_x
+        phi = math.atan2(c_val, d_val)  # (-pi, pi]
+
+        theta_h = theta_thr_4dir if (d_name in DIR4_SIM) else theta_thr_8dir
+        delta = builtins.max(0.0, abs(phi) - theta_h)
+
+        total += 1
+        if delta > 0.0:
+            n_viol += 1
+            deltas.append(float(delta))
+
+    return total, n_viol, deltas
+
+
+def direction_violation_rate(pos_matrix_px, directional_data, dni):
+    """
+    Violation Rate:
+      VR = (#edges with delta>0) / (#valid directional edges)
+    If no valid edges, return 0.0.
+    """
+    total, n_viol, _ = _direction_violation_deltas(pos_matrix_px, directional_data, dni)
+    if total <= 0:
+        return 0.0
+    return float(n_viol) / float(total)
+
+
+def mean_angular_error_violations(pos_matrix_px, directional_data, dni):
+    """
+    Mean Angular Error on violated edges:
+      MAE_theta = mean(delta) over edges with delta>0
+    If no violated edges, return 0.0 (avoid downstream stats issues).
+    """
+    _, n_viol, deltas = _direction_violation_deltas(pos_matrix_px, directional_data, dni)
+    if n_viol <= 0:
+        return 0.0
+    return float(np.mean(np.asarray(deltas, dtype=float)))
+
