@@ -52,7 +52,7 @@ def _parse_args() -> argparse.Namespace:
         "--model",
         type=str,
         required=True,
-        choices=["PhysicsSim", "StressMajorization", "DirectedMDS"],
+        choices=["PhysicsSim", "SMACOF", "DC-SMACOF"],
     )
     p.add_argument("--seed", type=int, default=0, help="Only used for PhysicsSim")
     p.add_argument(
@@ -118,7 +118,7 @@ def _run_baseline(model: str, fixed_point_labels: List[str]):
     gt_lonlat = uploading_ground_truth(vertice, dni)
     fixed_points_lonlat = [tuple(gt_lonlat[dni[name]]) for name in fixed_point_labels]
 
-    if model == "StressMajorization":
+    if model == "SMACOF":
         pos_hist_li = run_stress_majorization(vis=False)
         pos_last_li = deepcopy(pos_hist_li[-1])
         wrong_direction_lists = wrong_directions_nonflip(pos_last_li, vertice, dni)

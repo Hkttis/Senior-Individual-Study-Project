@@ -158,6 +158,53 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
     font = pygame.font.SysFont("Microsoft YaHei", 20)
     screen.fill((255, 255, 255)) 
 
+        # === Zoom / Position handling ===
+    def _fit_positions_to_canvas(pos_dict, canvas_w, canvas_h, pad=90):
+        xs = [p[0] for p in pos_dict.values()]
+        ys = [p[1] for p in pos_dict.values()]
+
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+
+        span_x = max(max_x - min_x, 1.0)
+        span_y = max(max_y - min_y, 1.0)
+
+        avail_w = max(canvas_w - 2 * pad, 1.0)
+        avail_h = max(canvas_h - 2 * pad, 1.0)
+
+        scale = min(avail_w / span_x, avail_h / span_y)
+
+        cx = 0.5 * (min_x + max_x)
+        cy = 0.5 * (min_y + max_y)
+        canvas_cx = canvas_w / 2
+        canvas_cy = canvas_h / 2
+
+        fitted = {
+            i: ((x - cx) * scale + canvas_cx,
+                (y - cy) * scale + canvas_cy)
+            for i, (x, y) in pos_dict.items()
+        }
+        return fitted, scale
+
+    if zoom_area:
+        x_min, y_min, x_max, y_max = zoom_area
+        source_positions = {
+            i: pos for i, pos in enumerate(pos_matrix)
+            if x_min <= pos[0] <= x_max and y_min <= pos[1] <= y_max
+        }
+        if not source_positions:
+            print("No nodes found in the zoomed area.")
+            return
+        adjusted_positions, scale_factor = _fit_positions_to_canvas(
+            source_positions, width, height, pad=70
+        )
+    else:
+        scale_factor = 1
+        adjusted_positions = {i: (pos[0], pos[1]) for i, pos in enumerate(pos_matrix)}
+        # adjusted_positions, scale_factor = _fit_positions_to_canvas(
+        #     source_positions, width, height, pad=90
+        # )
+    '''
     # === Zoom / Position handling ===
     scale_factor = 1
     if zoom_area:
@@ -179,6 +226,7 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
         }
     else:
         adjusted_positions = {i: (pos[0], pos[1]) for i, pos in enumerate(pos_matrix)}
+    '''
 
     # === Edge + Error computation ===
     errors = []
@@ -281,6 +329,10 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
     screen.blit(font.render("3%", True, (0, 0, 0)), (width - 75, height - 50))
     screen.blit(font.render("Error", True, (0, 0, 0)), (width - 70, height - 170))
 
+    _model_name = file_name.rstrip("_").split("_seed")[0] if file_name else "Model"
+    title_font = pygame.font.SysFont("Microsoft YaHei", 26)
+    title_surf = title_font.render(f"Error Map: {_model_name}", True, (0, 0, 0))
+    screen.blit(title_surf, (width // 2 - title_surf.get_width() // 2, 10))
     
     # === Save image to specific folder with name based on zoom_area ===
     save_dir = "C:/Users/hktti/Desktop/project/results"
@@ -340,12 +392,15 @@ def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_po
     pygame.init()
     width, height = 1200, 750
     screen = pygame.display.set_mode((width, height))
-    pygame.display.set_caption("Overlay: Physics Simulation vs Ground Truth")
+
+    _model_name = file_name.rstrip("_").split("_seed")[0] if file_name else "Model"
+    _title_str = f"Overlay: {_model_name} vs Reference Map"
+    pygame.display.set_caption(_title_str)
     font = pygame.font.SysFont("Microsoft YaHei", 20)
     big_font = pygame.font.SysFont("Microsoft YaHei", 30)
     screen.fill((255, 255, 255))
 
-    title_surf = big_font.render("Overlay: Physics Simulation vs Ground Truth", True, (0, 0, 0))
+    title_surf = big_font.render(_title_str, True, (0, 0, 0))
     screen.blit(title_surf, (width // 2 - title_surf.get_width() // 2, 20))
 
     # Display parameters (keep your look & feel)
@@ -457,7 +512,7 @@ def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_po
     screen.blit(rmse_surf, (width - rmse_surf.get_width() - 20, 30))
 
     kruskal_stress = calculate_kruskals_stress(dni, pos_matrix_pix2km(deepcopy(pos_matrix)), data)
-    kru_surf = font.render(f"kruskal's stress = {kruskal_stress:.4f}", True, (0, 0, 0))
+    kru_surf = font.render(f"stress = {kruskal_stress:.4f}", True, (0, 0, 0))
     screen.blit(kru_surf, (width - kru_surf.get_width() - 20, 80))
 
     # --- 9) Save & wait ---
@@ -489,7 +544,7 @@ def plot_three_model_convergence_pygame_pixelaware(
     window_size=(1200, 750),
     anchor_label="鄯善",
     orientation="pygame",           # "pygame" (y-down) 或 "north-up"
-    stress_y_scale="log",           # "log" 或 "linear"
+    stress_y_scale="linear",           # "log" 或 "linear"
     bin_size_iters_dm=10,
     bin_size_iters_sm=25, # ★ 以 iterations 分箱：可設 5、10、20
     band_alpha=38,                  # ★ 包絡帶透明度（~15%）
@@ -548,6 +603,7 @@ def plot_three_model_convergence_pygame_pixelaware(
                 sim_km = phys_px_to_km(P) if kind == "physics" else mds_li_to_km(P)
                 if kind == "strmds" :
                     sim_km = procrustes_align_by_fixed_points(deepcopy(P), fixed_point_labels, fixed_point_lonlat, dni)
+                sim_km = flipping_y(sim_km) if kind != "physics" else sim_km
                 se = []
                 for i, (sx, sy) in enumerate(sim_km):
                     gx, gy = gt_xy_km[i]
@@ -568,7 +624,7 @@ def plot_three_model_convergence_pygame_pixelaware(
                     P_pix = deepcopy(P) if orientation == "pygame" else flipping_y(deepcopy(P), height=H)
                 else:
                     P_pix = mds_li_to_pixels_for_kruskal(P)
-            ks = float(calculate_kruskals_stress(dni, pos_matrix_pix2km(deepcopy([list(q) for q in P_pix])), data))
+            ks = float(calculate_kruskals_stress(dni, pos_matrix_pix2km(deepcopy([list(q) for q in P_pix])), data_Li2sim(data)))
             series.append(ks)
         return series
 
@@ -615,6 +671,7 @@ def plot_three_model_convergence_pygame_pixelaware(
     rm_all = finite(rmse_ph + rmse_dm + rmse_sm) or [0.0, 1.0]
     yr_min, yr_max = min(rm_all), max(rm_all)
 
+    """
     # Stress
     ks_all = finite(ks_ph + ks_dm + ks_sm) or [1.0]
     if stress_y_scale == "log":
@@ -631,14 +688,57 @@ def plot_three_model_convergence_pygame_pixelaware(
         ticks_log = list(range(ks_min_tick, ks_max_tick + 1))
         span = max(ks_max_tick - ks_min_tick, 1e-12)
         def map_ks_y(v):
-            return int(top.bottom - ((math.log10(max(v, eps)) - ks_min_tick) / span) * top.height)
-    else:
-        yk_min_lin, yk_max_lin = min(ks_all), max(ks_all)
-        ks_min_tick = math.floor(yk_min_lin)
-        ks_max_tick = math.ceil(yk_max_lin)
-        span = max(ks_max_tick - ks_min_tick, 1e-12)
+            return int(top.bottom - ((math.log10(max(v, eps)) - ks_min_tick) / span) * top.height)"""
+    
+        # --- Stress y-range 與 y 映射 ---
+    ks_all = finite(ks_ph + ks_dm + ks_sm) or [1.0]
+
+    # 先給 log 分支預設值，避免之後 draw_axes_log 時變成 undefined
+    ticks_log = []
+    yk_min_log = 0.0
+    yk_max_log = 1.0
+
+    if stress_y_scale == "log":
+        pos_vals = [v for v in ks_all if v > 0]
+        if not pos_vals:
+            pos_vals = [1e-12]
+
+        eps = 0.5 * min(pos_vals)
+        yk_vals = [math.log10(max(v, eps)) for v in ks_all]
+        yk_min_log, yk_max_log = min(yk_vals), max(yk_vals)
+
+        ks_min_tick = math.floor(yk_min_log)
+        ks_max_tick = math.ceil(yk_max_log)
+        ticks_log = list(range(ks_min_tick, ks_max_tick + 1))
+
+        span_log = max(ks_max_tick - ks_min_tick, 1e-12)
+
         def map_ks_y(v):
-            return int(top.bottom - ((v - ks_min_tick) / span) * top.height)
+            return int(
+                top.bottom
+                - ((math.log10(max(v, eps)) - ks_min_tick) / span_log) * top.height
+            )
+
+    else:
+        # Stress: use a zoomed linear y-axis determined from the post-transient tail
+        tail_skip = 0
+        ks_tail = finite(ks_ph[tail_skip:] + ks_dm[tail_skip:] + ks_sm[tail_skip:])
+        if not ks_tail:
+            ks_tail = ks_all
+
+        yk_min_lin = max(0.0, min(ks_tail) * 0.95)
+        yk_max_lin = float(np.percentile(ks_tail, 98))
+
+        if yk_max_lin <= yk_min_lin:
+            yk_max_lin = max(ks_tail) * 1.05 if ks_tail else (yk_min_lin + 1.0)
+
+        def map_ks_y(v):
+            v_clip = min(max(v, yk_min_lin), yk_max_lin)
+            span_lin = max(yk_max_lin - yk_min_lin, 1e-12)
+            return int(
+                top.bottom
+                - ((v_clip - yk_min_lin) / span_lin) * top.height
+            )
 
     def map_rmse_y(v):
         rm_max_tick = math.floor(yr_max)
@@ -670,36 +770,47 @@ def plot_three_model_convergence_pygame_pixelaware(
             i = j
         return bx, by_min, by_max, by_med
 
-    # --- 座標軸繪製（含邊界檢查） ---
     def draw_axes_linear(rect, y_min, y_max, x_max_iter, y_label, x_label):
         screen.fill((255, 255, 255), rect)
         pygame.draw.rect(screen, (245, 245, 245), rect)
-        # 軸線
+
         pygame.draw.line(screen, (0, 0, 0), (rect.left, rect.bottom), (rect.right, rect.bottom), 2)
         pygame.draw.line(screen, (0, 0, 0), (rect.left, rect.top),    (rect.left, rect.bottom), 2)
-        # grid
+
+        if y_max <= y_min:
+            y_max = y_min + 1.0
+
+        # horizontal grid
         for k in range(6):
-            yy = rect.bottom - int(k * rect.height / 5)
+            frac = k / 5.0
+            yy = rect.bottom - int(frac * rect.height)
             if rect.top <= yy <= rect.bottom:
                 pygame.draw.line(screen, (220, 220, 220), (rect.left, yy), (rect.right, yy), 1)
+
+        # vertical grid
         for k in range(6):
             xx = rect.left + int(k * rect.width / 5)
             if rect.left <= xx <= rect.right:
                 pygame.draw.line(screen, (220, 220, 220), (xx, rect.top), (xx, rect.bottom), 1)
-        # 標籤
+
         screen.blit(font.render(y_label, True, (0, 0, 0)), (rect.left - 10, rect.top - 25))
         screen.blit(font.render(x_label, True, (0, 0, 0)), (rect.centerx - 40, rect.bottom + 10))
-        # ticks（超界不畫）
+
+        # y ticks
         for k in range(6):
-            yv = y_min + (ceil(y_max) - floor(y_min)) * (k / 5.0)
-            yy = rect.bottom - int(k * rect.height / 5)
+            frac = k / 5.0
+            yv = y_min + (y_max - y_min) * frac
+            yy = rect.bottom - int(frac * rect.height)
             if rect.top <= yy <= rect.bottom:
-                screen.blit(font.render(f"{yv:.3g}", True, (0, 0, 0)), (rect.left - 70, yy - 8))
+                screen.blit(font.render(f"{yv:.4f}", True, (0, 0, 0)), (rect.left - 75, yy - 8))
+
+        # x ticks
+        for k in range(6):
             xv = int(x_max_iter * (k / 5.0))
             xx = rect.left + int(k * rect.width / 5)
             if rect.left <= xx <= rect.right:
                 screen.blit(font.render(f"{xv}", True, (0, 0, 0)), (xx - 10, rect.bottom + 8))
-
+                
     def draw_axes_log(rect, decade_ticks, y_min_log, y_max_log, x_max_iter, y_label, x_label):
         screen.fill((255, 255, 255), rect)
         pygame.draw.rect(screen, (245, 245, 245), rect)
@@ -720,7 +831,61 @@ def plot_three_model_convergence_pygame_pixelaware(
         # 標籤
         screen.blit(font.render(y_label, True, (0, 0, 0)), (rect.left - 10, rect.top - 25))
         screen.blit(font.render(x_label, True, (0, 0, 0)), (rect.centerx - 40, rect.bottom + 10))
+    
+    def draw_binned_band_and_median(
+        rect, xs, ys, map_y, color, bin_size,
+        alpha=38, median_width=2, visible_pred=None
+    ):
+        bx, ymin_v, ymax_v, ymed_v = bin_min_max_median_by_iters(xs, ys, bin_size)
+        if not bx:
+            return
 
+        # 依 visible_pred 切成多段，避免超過上界的區段被硬畫成頂部水平線
+        segments = []
+        current = []
+
+        for xm, vmin, vmax, vmed in zip(bx, ymin_v, ymax_v, ymed_v):
+            ok = True if visible_pred is None else visible_pred(vmed)
+
+            if ok:
+                current.append((xm, vmin, vmax, vmed))
+            else:
+                if current:
+                    segments.append(current)
+                    current = []
+
+        if current:
+            segments.append(current)
+
+        if not segments:
+            return
+
+        for seg in segments:
+            bx_s, ymin_s, ymax_s, ymed_s = zip(*seg)
+
+            pxs   = [map_x_to_pixel(xm, rect) for xm in bx_s]
+            ymins = [map_y(v) for v in ymin_s]
+            ymaxs = [map_y(v) for v in ymax_s]
+            ymeds = [map_y(v) for v in ymed_s]
+
+            # --- band polygon ---
+            poly_points = list(zip(pxs, ymaxs)) + list(zip(reversed(pxs), reversed(ymins)))
+            band = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            poly_local = [(x - rect.left, y - rect.top) for (x, y) in poly_points]
+            band_color = (color[0], color[1], color[2], max(0, min(255, alpha)))
+
+            if len(poly_local) >= 3:
+                pygame.draw.polygon(band, band_color, poly_local)
+                screen.blit(band, rect.topleft)
+
+            # --- median 折線 ---
+            median_points = list(zip(pxs, ymeds))
+            if len(median_points) >= 2:
+                pygame.draw.aalines(screen, color, False, median_points)
+                for i in range(1, median_width):
+                    shifted = [(x, y - i) for (x, y) in median_points]
+                    pygame.draw.aalines(screen, color, False, shifted)
+    '''
     # --- 包絡帶 + 中位數繪製（以 iteration 分箱） ---
     def draw_binned_band_and_median(rect, xs, ys, map_y, color, bin_size, alpha=38, median_width=2):
         bx, ymin_v, ymax_v, ymed_v = bin_min_max_median_by_iters(xs, ys, bin_size)
@@ -749,7 +914,7 @@ def plot_three_model_convergence_pygame_pixelaware(
             for i in range(1, median_width):
                 shifted = [(x, y - i) for (x, y) in median_points]
                 pygame.draw.aalines(screen, color, False, shifted)
-
+    '''
     # --- 顏色（沿用固定色） ---
     C_PH = (0, 102, 204)    # Physics: Blue
     C_DM = (255, 140, 0)    # Directed-MDS: Orange
@@ -776,22 +941,46 @@ def plot_three_model_convergence_pygame_pixelaware(
 
     bin_size_iters_zero = 1
     
+    if stress_y_scale == "log":
+        visible_top = None
+    else:
+        visible_top = lambda v: (yk_min_lin <= v <= yk_max_lin)
+
+    draw_binned_band_and_median(
+        top, xs_ph, ks_ph, mapY_top, C_PH, bin_size_iters_zero,
+        alpha=band_alpha, median_width=2,
+        visible_pred=visible_top
+    )
+    draw_binned_band_and_median(
+        top, xs_dm, ks_dm, mapY_top, C_DM, bin_size_iters_zero,
+        alpha=band_alpha, median_width=2,
+        visible_pred=visible_top
+    )
+    draw_binned_band_and_median(
+        top, xs_sm, ks_sm, mapY_top, C_SM, bin_size_iters_zero,
+        alpha=band_alpha, median_width=2,
+        visible_pred=visible_top
+    )
+    '''
     # --- 繪製包絡帶 + 中位線 ---
     draw_binned_band_and_median(top, xs_ph, ks_ph, mapY_top, C_PH, bin_size_iters_zero, alpha=band_alpha, median_width=2)
     draw_binned_band_and_median(top, xs_dm, ks_dm, mapY_top, C_DM, bin_size_iters_zero, alpha=band_alpha, median_width=2)
     draw_binned_band_and_median(top, xs_sm, ks_sm, mapY_top, C_SM, bin_size_iters_zero, alpha=band_alpha, median_width=2)
-
+    '''
+    
     draw_binned_band_and_median(bot, xs_ph, rmse_ph, map_rmse_y, C_PH, bin_size_iters_zero, alpha=band_alpha, median_width=2)
-    draw_binned_band_and_median(bot, xs_dm, rmse_dm, map_rmse_y, C_DM, bin_size_iters_dm, alpha=band_alpha, median_width=2)
+    draw_binned_band_and_median(bot, xs_dm, rmse_dm, map_rmse_y, C_DM, bin_size_iters_zero, alpha=band_alpha, median_width=2)
     draw_binned_band_and_median(bot, xs_sm, rmse_sm, map_rmse_y, C_SM, bin_size_iters_sm, alpha=band_alpha, median_width=2)
-
+    
+    
     # --- 簡易圖例 ---
     def legend(x, y):
-        items = [("Force-directed (our method)", C_PH), ("Vector MDS", C_DM), ("Stress-Majorization", C_SM)]
+        y += 20
+        items = [("PhysicSim (our method)", C_PH), ("DC-SMACOF", C_DM), ("SMACOF", C_SM)]
         dx = 0
         for label, col in items:
             if col == C_DM :
-                dx += 100
+                dx += 65
             pygame.draw.line(screen, col, (x + dx, y), (x + dx + 20, y), 4)
             screen.blit(font.render(label, True, (0, 0, 0)), (x + dx + 30, y - 10))
             dx += 130

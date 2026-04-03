@@ -47,6 +47,63 @@ def lcc_transformation(dni, ground_truth_positions):
             lcc_xy_km.append(((x-align_pos[0])/1000 , (y-align_pos[1])/1000))
     return lcc_xy_km
 
+def lcc_transformation_with_anchor(dni, ground_truth_positions, anchor_label="鄯善"):
+    """
+    Lambert Conformal Conic projection -> anchor-centered km coordinates.
+
+    Parameters
+    ----------
+    dni : dict[str, int]
+        label -> node index
+    ground_truth_positions : list[tuple[lon, lat]]
+        Per-node lon/lat list. Use (0,0) for unknowns.
+    anchor_label : str
+        Which known node is used as the frame origin (0,0) in projected km.
+    """
+    if anchor_label not in dni:
+        raise KeyError(f"anchor_label {anchor_label!r} not found in dni")
+
+    lon_min, lon_max = 73.24516481, 92.74103523
+    lat_min, lat_max = 37.12265816, 44.2843368
+    lat1 = lat_min
+    lat2 = lat_max
+    lon0 = (lon_min + lon_max) / 2
+
+    crs_lcc = CRS.from_proj4(
+        f"+proj=lcc +lat_1={lat1} +lat_2={lat2} "
+        f"+lat_0={lat1} +lon_0={lon0} +x_0=0 +y_0=0 "
+        "+ellps=WGS84 +units=m"
+    )
+    transformer = Transformer.from_crs("EPSG:4326", crs_lcc, always_xy=True)
+
+    lcc_xy_m = []
+    for lon, lat in ground_truth_positions:
+        if lon == 0 and lat == 0:
+            lcc_xy_m.append((None, None))
+        else:
+            lcc_xy_m.append(transformer.transform(lon, lat))
+
+    anchor_idx = dni[anchor_label]
+    align_pos = lcc_xy_m[anchor_idx]
+    if align_pos[0] is None or align_pos[1] is None:
+        raise ValueError(
+            f"anchor_label {anchor_label!r} has empty lon/lat in ground_truth_positions; "
+            "cannot build anchor-centered frame."
+        )
+
+    lcc_xy_km = []
+    for x, y in lcc_xy_m:
+        if x is None and y is None:
+            lcc_xy_km.append((None, None))
+        else:
+            lcc_xy_km.append(((x - align_pos[0]) / 1000, (y - align_pos[1]) / 1000))
+    return lcc_xy_km
+
+
+def lcc_transformation(dni, ground_truth_positions):
+    # Backward-compatible wrapper (default anchor = 鄯善)
+    return lcc_transformation_with_anchor(dni, ground_truth_positions, anchor_label="鄯善")
+
 def inverse_lcc_transformation(lcc_xy_km, wgs_align_pos):
     # Define projection parameters again (must be identical to the original)
     lon_min, lon_max = 73.24516481, 92.74103523

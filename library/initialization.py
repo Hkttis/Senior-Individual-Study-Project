@@ -5,7 +5,7 @@ from library.config import km2pix, km2Li
 from library.units import gt_km2sim
 
 
-def generate_CHEN_initial_positions (refer_pos, fixed_point_labels, fixed_points_lonlat): # Initialize position of points from CHEN_STRESSMAJORIZATION/random positions
+def generate_CHEN_initial_positions (refer_pos, fixed_point_labels, fixed_points_lonlat, anchor_label="鄯善"): # Initialize position of points from CHEN_STRESSMAJORIZATION/random positions
 
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
     
@@ -22,8 +22,9 @@ def generate_CHEN_initial_positions (refer_pos, fixed_point_labels, fixed_points
     center_pos = refer_pos
     
     pos_matrix = shift(pos_matrix,2,center_pos)
-    pos_matrix,fixed_positions_list = add_fixed_positions(dni,pos_matrix,refer_pos, fixed_point_labels, fixed_points_lonlat)
-    
+    pos_matrix,fixed_positions_list = add_fixed_positions(
+        dni, pos_matrix, refer_pos, fixed_point_labels, fixed_points_lonlat, anchor_label=anchor_label
+    )
     
     ## pos_matrix = pre_physics_simulation(pos_matrix,dni) #pre_PS ensures the accuracy of pos of fixed points 
 
@@ -46,7 +47,7 @@ def construct_Chen_graph(data):
         graph[dni[row[0]]].append(row)
         graph[dni[row[1]]].append([row[1]]+[row[0]]+[row[2]]+[row[3]])
     return graph,vertice,dni,edges
-def add_fixed_positions(dni, pos_matrix, refer_pos, fixed_point_labels, fixed_point_lonlat):
+def add_fixed_positions(dni, pos_matrix, refer_pos, fixed_point_labels, fixed_point_lonlat, anchor_label="鄯善"):
     """
     使用 lcc_transformation 進行 LCC 投影，並將 fixed_points 對齊到畫布上的固定位置。
     回傳:
@@ -63,7 +64,7 @@ def add_fixed_positions(dni, pos_matrix, refer_pos, fixed_point_labels, fixed_po
             raise KeyError(f"Fixed point '{label}' not found in dni.")
         gt_lonlat[dni[label]] = lonlat
     
-    gt_xy_km = lcc_transformation(dni, gt_lonlat)  # per-node list in km (None where missing)
+    gt_xy_km = lcc_transformation_with_anchor(dni, gt_lonlat, anchor_label=anchor_label)
     
     gt_sim = gt_km2sim( gt_xy_km )
 

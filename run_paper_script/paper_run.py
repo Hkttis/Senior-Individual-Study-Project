@@ -12,7 +12,7 @@ Chapter 5 (Experiments)
   - scripts/ch5_compare_models_convergence.py
   - scripts/ch5_benchmark_models.py
   - scripts/ch5_bootstrap_stability.py
-
+  - scripts/ch5_hparam_kfold_gridsearch_pareto.py
 Chapter 6 (Visualizations)
   - scripts/ch6_visualize_single_model.py
   - scripts/ch6_interaction_map.py
@@ -28,6 +28,7 @@ python -m run_paper_script.paper_run ch5-baseline --model DirectedMDS --vis
 python -m run_paper_script.paper_run ch5-compare --seed 37
 python -m run_paper_script.paper_run ch5-benchmark --n-runs 100 --save-histories
 python -m run_paper_script.paper_run ch5-bootstrap --n-bootstrap 300 --spring-jitter 0.05 --repulse-jitter 0.20
+python -m run_paper_script.paper_run ch5-hparam-kfold --anchors-json anchors.json --w-dis 1500 --seeds 0,1,2
 
 python -m run_paper_script.paper_run ch6-visualize --model PhysicsSim --seed 0
 python -m run_paper_script.paper_run ch6-visualize --model StressMajorization
@@ -70,6 +71,8 @@ def main() -> None:
         _as_mod("run_paper_script.ch5_benchmark_models")
     elif cmd == "ch5-bootstrap":
         _as_mod("run_paper_script.ch5_bootstrap_stability")
+    elif cmd == "ch5-hparam-kfold":
+        _as_mod("run_paper_script.ch5_hparam_kfold_gridsearch_pareto")
     elif cmd == "ch6-visualize":
         _as_mod("run_paper_script.ch6_visualize_single_model")
     elif cmd == "ch6-map":

@@ -70,7 +70,7 @@ refer_pos_sim = [refer_pos[0], height - refer_pos[1]]
 
 # --- Simulation hyperparameters ------------------------------------------
 # Naming: W_dis (spring), W_rep (repulsion), W_dir (directional)
-SPRING_STIFFNESS_BASE: float = 15000.0
+SPRING_STIFFNESS_BASE: float = 1500 #0.0
 DIRECTIONAL_FORCE_MAGNITUDE_BASE: float = 10000.0*100
 REPULSION_STRENGTH_BASE: float = 5000.0*0.1
 

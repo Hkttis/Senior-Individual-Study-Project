@@ -14,7 +14,7 @@ from library.directions import DIR8_UNIT_SIM as unit_direction_dict
 # configuration
 fix_weight = 1  # weight of fixed points is 10000, let it be fixed because it wanna fit the dij
 w_weight = 1
-v_weight = 0.0001
+v_weight = 0.05
 stop_iteration_times = 1000
 
 
@@ -150,7 +150,7 @@ def compute_DW_DV(n,s,m,t,X,sel_data,graph,vertice,dni,edges,dis,fixed_points_fl
     cnt = 0
     for i in range(n) :
         for j in range(i) : # j < i
-            v = X[i]-X[j]
+            v = X[j]-X[i]
             if linalg.norm(v)==0 :
                 unit = numpy.zeros((1,2))
             else : 
@@ -163,11 +163,12 @@ def compute_DW_DV(n,s,m,t,X,sel_data,graph,vertice,dni,edges,dis,fixed_points_fl
         x = dni[sel_data[i][0]]
         y = dni[sel_data[i][1]]
         v = X[y]-X[x]
+        current_dist = linalg.norm(v)
         unit = numpy.array(unit_direction_dict[sel_data[i][2]])
-        if dis[x][y] !=0 :
-            DV[i] = deepcopy(dis[x][y]*unit)
+        if current_dist > 1e-9 :
+            DV[i] = -(current_dist * unit)
         else :
-            DV[i] = deepcopy((linalg.norm(v)*unit))
+            DV[i] = numpy.zeros(2)
     
     return DW,DV
 def stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis) : # weigh in km**2
@@ -201,7 +202,7 @@ def stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis) : # we
         unitdata = numpy.array(unit_direction_dict[sel_data[i][2]])
         stressv = stressv + veight[x][y]*(( linalg.norm(v)*linalg.norm(unitx-unitdata) )**2)
         #stressv = stressv + veight[x][y]*((linalg.norm(v)*(numpy.dot(unitx,unitdata)-1))**2)
-    return stressw
+    return stressw + stressv
 def iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_direct_flag,inipos,weight,LW,veight,LV,JW,JV) :
     iniX = deepcopy(inipos)
     pre_DW,pre_DV = compute_DW_DV(n,s,m,t,iniX,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag)
