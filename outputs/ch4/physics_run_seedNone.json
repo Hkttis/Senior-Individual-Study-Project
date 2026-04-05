@@ -23,7 +23,7 @@
     250.0
   ],
   "spring_stiffness": 15000.0,
-  "repulsion_strength": 500.0,
+  "repulsion_strength": 0,
   "directional_force_magnitude": 1000000.0,
   "note": "pos_*_px are screen pixel coords (y-down)."
 }

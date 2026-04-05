@@ -4,6 +4,7 @@ from copy import deepcopy
 from numpy import *
 from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import cg
+from scipy.linalg import solve_triangular
 
 from library.config import km2pix, km2Li
 from library.directions import DIR8_UNIT_SIM as unit_direction_dict
@@ -151,24 +152,25 @@ def compute_DW_DV(n,s,m,t,X,sel_data,graph,vertice,dni,edges,dis,fixed_points_fl
     for i in range(n) :
         for j in range(i) : # j < i
             v = X[j]-X[i]
-            if linalg.norm(v)==0 :
-                unit = numpy.zeros((1,2))
+            nrm = linalg.norm(v)
+            if nrm == 0 :
+                unit = numpy.zeros(2)
             else : 
-                unit = v/linalg.norm(v)
-            DW[cnt] = dis[i][j]*deepcopy(unit)
+                unit = v/nrm
+            DW[cnt] = dis[i][j]*unit
             cnt += 1
+    
+    avg_d = avg_dis(dis)   # 預算平均距離，作為 dis==0 時的 fallback
     
     DV = numpy.zeros((t,2))
     for i in range(t) :
         x = dni[sel_data[i][0]]
         y = dni[sel_data[i][1]]
-        v = X[y]-X[x]
-        current_dist = linalg.norm(v)
         unit = numpy.array(unit_direction_dict[sel_data[i][2]])
-        if current_dist > 1e-9 :
-            DV[i] = -(current_dist * unit)
+        if dis[x][y] != 0 :
+            DV[i] = -(dis[x][y]*unit)
         else :
-            DV[i] = numpy.zeros(2)
+            DV[i] = -(avg_d*unit)   # 用平均距離取代 current_dist，有上界不會爆
     
     return DW,DV
 def stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis) : # weigh in km**2
@@ -210,18 +212,23 @@ def iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_di
     now_stress = 0
     Z = iniX
     stress_history = [pre_stress]
-    pos_history = [deepcopy(iniX)]  # record the initial positions
+    pos_history = [deepcopy(iniX)]
     cnt = 0
     while cnt <= stop_iteration_times :
         left = LW+LV
         right = numpy.matmul(JW,pre_DW)+numpy.matmul(JV,pre_DV)
         
-        X = numpy.zeros(right.shape)  # Preallocate X to hold solutions
-        for i in range(right.shape[1]):  # Iterate over each column of b
-            x, exit_code = cg(left, right[:, i])
-            if exit_code != 0:
-                print(f'**********CG failed to converge with exit code {exit_code}*********')
-            X[:, i] = x
+        # 刪除第 0 行/列 (和 SMACOF 相同做法，消除 Laplacian 奇異性)
+        left_red = numpy.delete(numpy.delete(left, 0, axis=0), 0, axis=1)
+        right_red = numpy.delete(right, 0, axis=0)
+        
+        # Cholesky 求解 (正定矩陣，保證成功)
+        G = numpy.linalg.cholesky(left_red)
+        GT = numpy.transpose(G)
+        Y = solve_triangular(G, right_red, lower=True)
+        X_red = solve_triangular(GT, Y, lower=False)
+        X = numpy.r_[numpy.array([[0.0, 0.0]]), X_red]
+        
         now_DW,now_DV = compute_DW_DV(n,s,m,t,X,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag)
         now_stress = stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis)
         pre_DW = now_DW
@@ -230,7 +237,7 @@ def iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_di
         pre_stress = now_stress
         cnt = cnt + 1
         Z = X
-        pos_history.append(deepcopy(Z)) # record the current positions
+        pos_history.append(deepcopy(Z))
     return Z, stress_history, pos_history
 def directed_MDS(c_data,data,graph,vertice,dni,edges) : # c_data is from data_process, which [0,2] contain directed data
     n = len(vertice) # the number of points             # data~edges are from Chen~_method

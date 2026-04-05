@@ -16,7 +16,7 @@ from library.directions import DIR4_SIM, DIR4DIAG_RAW_SIM, DIR8_UNIT_SIM
 def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,
                             spring_stiffness,repulsion_strength,directional_force_magnitude, plot = False):
     n = len(vertice)
-    
+
     mass = MASS_BASE
     fixmass = FIXMASS_BASE
     radius = RADIUS_BASE
