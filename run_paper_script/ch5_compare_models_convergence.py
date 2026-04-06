@@ -34,7 +34,7 @@ from library.data_io import load_ini_data_from_csv, uploading_ground_truth, uplo
 from library.initialization import generate_CHEN_initial_positions
 from library.units import data_Li2sim
 from library.physics import main_physics_simulation
-from library.visualization import plot_three_model_convergence_pygame_pixelaware
+from library.visualization import plot_three_model_convergence_pygame_pixelaware, plot_three_model_direction_convergence
 
 
 def _parse_args() -> argparse.Namespace:
@@ -110,6 +110,29 @@ def main() -> None:
         refer_pos=tuple(_refer_pos_screen),
         orientation="north-up",
         pre_process=False,
+    )
+
+    # 4) Direction convergence comparison (VR & MAE)
+    plot_three_model_direction_convergence(
+        pos_hist_ph_px,
+        pos_hist_dm_li,
+        pos_hist_sm_li,
+        vertice=vertice,
+        dni=dni,
+        data=data,
+        ground_truth_positions=gt_lonlat,
+        directional_data=directional_data,
+        fixed_point_labels=fixed_point_labels,
+        fixed_point_lonlat=fixed_points_lonlat,
+        refer_pos=tuple(_refer_pos_screen),
+        orientation="north-up",
+        pre_process=False,
+        bin_size_sm_vr=20,
+        bin_size_sm_mae=20,
+        bin_size_dm_vr=5,
+        bin_size_dm_mae=5,
+        bin_size_ph_vr=10,
+        bin_size_ph_mae=10,
     )
 
 

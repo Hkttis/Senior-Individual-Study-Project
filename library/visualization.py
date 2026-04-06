@@ -10,7 +10,7 @@ from typing import List, Tuple, Optional
 
 from library.units import *
 from library.anchor_frame import px_list_to_km_list
-from library.metrics import stress_function, calculate_kruskals_stress, procrustes_align_by_fixed_points, rmse_km_from_pixels
+from library.metrics import *
 from library.geometry import lcc_transformation
 from library.coordinates import flipping_y, flipping_gt
 from library.units import pos_matrix_sim2km, pos_matrix_pix2km
@@ -993,6 +993,291 @@ def plot_three_model_convergence_pygame_pixelaware(
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         pygame.image.save(screen, save_path)
 
+    running = True
+    while running:
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                running = False
+    pygame.quit()
+
+def plot_three_model_direction_convergence(
+    pos_history_physics,
+    pos_history_directed_mds,
+    pos_history_stress_mj,
+    *,
+    vertice,
+    dni,
+    data,
+    ground_truth_positions,
+    directional_data,
+    fixed_point_labels=[],
+    fixed_point_lonlat=[],
+    refer_pos=(600, 500),
+    window_size=(1200, 750),
+    anchor_label="鄯善",
+    orientation="pygame",
+    # === SMACOF 分箱開關（手動調整即可）===
+    bin_size_sm_vr=10,          # SMACOF VR 分箱大小；設 1 = 不分箱
+    bin_size_sm_mae=10,         # SMACOF MAE 分箱大小
+    bin_size_dm_vr=10,          # DC-SMACOF VR 分箱大小
+    bin_size_dm_mae=10,         # DC-SMACOF MAE 分箱大小
+    bin_size_ph_vr=10,          # PhysicSim VR 分箱大小
+    bin_size_ph_mae=10,         # PhysicSim MAE 分箱大小
+    band_alpha=38,
+    pre_process=False,
+    save_path="C:/Users/hktti/Desktop/project/results/ThreeModels_VR_MAE.png",
+):
+    """
+    繪製三模型的方向指標收斂圖：
+      • 上：Violation Rate (VR)
+      • 下：Mean Angular Error (MAE, rad)
+ 
+    座標轉換邏輯與 model_cmp.py 的 benchmark 完全一致：
+      - PhysicsSim:  pos_history 已在 sim/y-up → 直接使用
+      - DC-SMACOF:   alignment_and_scaling(y_down=False)
+      - SMACOF:      alignment_and_scaling(y_down=False) + procrustes_align_by_fixed_points
+ 
+    SMACOF 因無方向約束，佈局會翻轉震盪，
+    可透過 bin_size_sm_vr / bin_size_sm_mae 控制分箱大小輔助閱讀。
+    """
+    from library.data_io import uploading_directional_data as _load_dir
+    from library.config import refer_pos_sim
+ 
+    if anchor_label not in dni:
+        raise KeyError(f"Anchor '{anchor_label}' not found in dni.")
+ 
+    W, H = window_size
+ 
+    # ------------------------------------------------------------------
+    # 座標轉換：將每一幀轉到 sim/y-up（DIR8_UNIT_SIM 定義在此座標系）
+    # ------------------------------------------------------------------
+    _rp = list(refer_pos_sim)          # y-up 參考點
+ 
+    def _convert_phys(frame):
+        """PhysicsSim: 已是 sim/y-up"""
+        return deepcopy(frame)
+ 
+    def _convert_dm(frame):
+        """DC-SMACOF: Li → alignment_and_scaling (不翻y) → sim/y-up"""
+        return alignment_and_scaling(
+            deepcopy(frame), vertice, dni, refer_pos=_rp, y_down=False
+        )
+ 
+    def _convert_sm(frame):
+        """SMACOF: Li → alignment_and_scaling → Procrustes → sim/y-up"""
+        px = alignment_and_scaling(
+            deepcopy(frame), vertice, dni, refer_pos=_rp, y_down=False
+        )
+        px = procrustes_align_by_fixed_points(
+            deepcopy(px), fixed_point_labels, fixed_point_lonlat, dni,
+            refer_pos=_rp
+        )
+        return px
+ 
+    # ------------------------------------------------------------------
+    # 計算 VR / MAE 時間序列
+    # ------------------------------------------------------------------
+    def _series(pos_history, convert_fn, metric_fn):
+        out = []
+        for P in pos_history:
+            try:
+                sim_pos = convert_fn(P)
+                v = metric_fn(np.asarray(sim_pos, dtype=float),
+                              directional_data, dni)
+                out.append(float(v))
+            except Exception:
+                out.append(float("nan"))
+        return out
+ 
+    print("[VR/MAE Convergence] PhysicsSim ...")
+    vr_ph  = _series(pos_history_physics,      _convert_phys, direction_violation_rate)
+    mae_ph = _series(pos_history_physics,      _convert_phys, mean_angular_error_violations)
+ 
+    print("[VR/MAE Convergence] DC-SMACOF ...")
+    vr_dm  = _series(pos_history_directed_mds, _convert_dm,   direction_violation_rate)
+    mae_dm = _series(pos_history_directed_mds, _convert_dm,   mean_angular_error_violations)
+ 
+    print("[VR/MAE Convergence] SMACOF ...")
+    vr_sm  = _series(pos_history_stress_mj,    _convert_sm,   direction_violation_rate)
+    mae_sm = _series(pos_history_stress_mj,    _convert_sm,   mean_angular_error_violations)
+ 
+    xs_ph = list(range(len(vr_ph)))
+    xs_dm = list(range(len(vr_dm)))
+    xs_sm = list(range(len(vr_sm)))
+    x_max_iter = max(len(xs_ph), len(xs_dm), len(xs_sm)) - 1
+    if x_max_iter <= 0:
+        x_max_iter = 1
+ 
+    # ------------------------------------------------------------------
+    # pygame 視窗
+    # ------------------------------------------------------------------
+    pygame.init()
+    flags = pygame.DOUBLEBUF
+    try:
+        screen = pygame.display.set_mode(window_size, flags, vsync=1)
+    except TypeError:
+        screen = pygame.display.set_mode(window_size, flags)
+    pygame.display.set_caption("Convergence: Violation Rate & MAE")
+    font = pygame.font.SysFont("Arial", 18)
+    title_font = pygame.font.SysFont("Arial", 26)
+ 
+    M = 80
+    top = pygame.Rect(M, M + 20, W - 2 * M, (H - 3 * M) // 2)
+    bot = pygame.Rect(M, top.bottom + M, W - 2 * M, (H - 3 * M) // 2)
+ 
+    def finite(vals):
+        return [v for v in vals
+                if v is not None and isinstance(v, (int, float))
+                and not (math.isnan(v) or math.isinf(v))]
+ 
+    # --- y 範圍 ---
+    vr_all  = finite(vr_ph  + vr_dm  + vr_sm)  or [0.0, 1.0]
+    mae_all = finite(mae_ph + mae_dm + mae_sm) or [0.0, 1.0]
+ 
+    vr_y_min, vr_y_max   = 0.0, min(1.0, max(vr_all) * 1.1)
+    mae_y_min, mae_y_max = 0.0, max(mae_all) * 1.1
+    if vr_y_max  <= vr_y_min:  vr_y_max  = 1.0
+    if mae_y_max <= mae_y_min: mae_y_max = 1.0
+ 
+    # --- y 映射 ---
+    def map_vr_y(v):
+        v_c = min(max(v, vr_y_min), vr_y_max)
+        sp  = max(vr_y_max - vr_y_min, 1e-12)
+        return int(top.bottom - ((v_c - vr_y_min) / sp) * top.height)
+ 
+    def map_mae_y(v):
+        v_c = min(max(v, mae_y_min), mae_y_max)
+        sp  = max(mae_y_max - mae_y_min, 1e-12)
+        return int(bot.bottom - ((v_c - mae_y_min) / sp) * bot.height)
+ 
+    # --- x 映射 ---
+    def map_x_to_pixel(x_idx, rect):
+        if x_max_iter <= 0:
+            return rect.left
+        return rect.left + int(round((x_idx / x_max_iter) * (rect.width - 1)))
+ 
+    # --- 分箱 ---
+    def bin_min_max_median_by_iters(xs, ys, bin_size):
+        N = len(xs)
+        if N == 0 or bin_size <= 0:
+            return [], [], [], []
+        bx, by_min, by_max, by_med = [], [], [], []
+        i = 0
+        while i < N:
+            j = min(i + bin_size, N)
+            seg = [ys[k] for k in range(i, j)
+                   if ys[k] is not None
+                   and not (isinstance(ys[k], float) and (math.isnan(ys[k]) or math.isinf(ys[k])))]
+            if seg:
+                bx.append(0.5 * (xs[i] + xs[j - 1]))
+                by_min.append(min(seg))
+                by_max.append(max(seg))
+                by_med.append(float(np.median(seg)))
+            i = j
+        return bx, by_min, by_max, by_med
+ 
+    # --- 座標軸 ---
+    def draw_axes_linear(rect, y_min, y_max, x_max_it, y_label, x_label):
+        screen.fill((255, 255, 255), rect)
+        pygame.draw.rect(screen, (245, 245, 245), rect)
+        pygame.draw.line(screen, (0, 0, 0), (rect.left, rect.bottom), (rect.right, rect.bottom), 2)
+        pygame.draw.line(screen, (0, 0, 0), (rect.left, rect.top),    (rect.left,  rect.bottom), 2)
+        if y_max <= y_min:
+            y_max = y_min + 1.0
+        for k in range(6):
+            frac = k / 5.0
+            yy = rect.bottom - int(frac * rect.height)
+            if rect.top <= yy <= rect.bottom:
+                pygame.draw.line(screen, (220, 220, 220), (rect.left, yy), (rect.right, yy), 1)
+        for k in range(6):
+            xx = rect.left + int(k * rect.width / 5)
+            if rect.left <= xx <= rect.right:
+                pygame.draw.line(screen, (220, 220, 220), (xx, rect.top), (xx, rect.bottom), 1)
+        screen.blit(font.render(y_label, True, (0, 0, 0)), (rect.left - 10, rect.top - 25))
+        screen.blit(font.render(x_label, True, (0, 0, 0)), (rect.centerx - 40, rect.bottom + 10))
+        for k in range(6):
+            frac = k / 5.0
+            yv = y_min + (y_max - y_min) * frac
+            yy = rect.bottom - int(frac * rect.height)
+            if rect.top <= yy <= rect.bottom:
+                screen.blit(font.render(f"{yv:.3f}", True, (0, 0, 0)), (rect.left - 70, yy - 8))
+        for k in range(6):
+            xv = int(x_max_it * (k / 5.0))
+            xx = rect.left + int(k * rect.width / 5)
+            if rect.left <= xx <= rect.right:
+                screen.blit(font.render(f"{xv}", True, (0, 0, 0)), (xx - 10, rect.bottom + 8))
+ 
+    # --- 繪製曲線 + 包絡帶 ---
+    def draw_binned_band_and_median(rect, xs, ys, map_y, color, bin_size,
+                                     alpha=38, median_width=2):
+        bx, ymin_v, ymax_v, ymed_v = bin_min_max_median_by_iters(xs, ys, bin_size)
+        if not bx:
+            return
+        pxs    = [map_x_to_pixel(xm, rect) for xm in bx]
+        ymins  = [map_y(v) for v in ymin_v]
+        ymaxs  = [map_y(v) for v in ymax_v]
+        ymeds  = [map_y(v) for v in ymed_v]
+ 
+        poly_points = list(zip(pxs, ymaxs)) + list(zip(reversed(pxs), reversed(ymins)))
+        band = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        poly_local = [(x - rect.left, y - rect.top) for (x, y) in poly_points]
+        band_color = (color[0], color[1], color[2], max(0, min(255, alpha)))
+        if len(poly_local) >= 3:
+            pygame.draw.polygon(band, band_color, poly_local)
+            screen.blit(band, rect.topleft)
+ 
+        median_points = list(zip(pxs, ymeds))
+        if len(median_points) >= 2:
+            pygame.draw.aalines(screen, color, False, median_points)
+            for i in range(1, median_width):
+                shifted = [(x, y - i) for (x, y) in median_points]
+                pygame.draw.aalines(screen, color, False, shifted)
+ 
+    # ------------------------------------------------------------------
+    # 顏色
+    # ------------------------------------------------------------------
+    C_PH = (0, 102, 204)      # PhysicsSim:  Blue
+    C_DM = (255, 140, 0)      # DC-SMACOF:   Orange
+    C_SM = (34, 139, 34)      # SMACOF:      Green
+ 
+    # ------------------------------------------------------------------
+    # 繪圖
+    # ------------------------------------------------------------------
+    screen.fill((255, 255, 255))
+    title = title_font.render("Convergence: Violation Rate & MAE", True, (0, 0, 0))
+    screen.blit(title, (W // 2 - title.get_width() // 2, 20))
+ 
+    # 上半：VR
+    draw_axes_linear(top, vr_y_min, vr_y_max, x_max_iter, "Violation Rate", "Iteration")
+    draw_binned_band_and_median(top, xs_ph, vr_ph,  map_vr_y, C_PH, bin_size_ph_vr,  alpha=band_alpha)
+    draw_binned_band_and_median(top, xs_dm, vr_dm,  map_vr_y, C_DM, bin_size_dm_vr,  alpha=band_alpha)
+    draw_binned_band_and_median(top, xs_sm, vr_sm,  map_vr_y, C_SM, bin_size_sm_vr,   alpha=band_alpha)
+ 
+    # 下半：MAE
+    draw_axes_linear(bot, mae_y_min, mae_y_max, x_max_iter, "MAE (rad)", "Iteration")
+    draw_binned_band_and_median(bot, xs_ph, mae_ph, map_mae_y, C_PH, bin_size_ph_mae,  alpha=band_alpha)
+    draw_binned_band_and_median(bot, xs_dm, mae_dm, map_mae_y, C_DM, bin_size_dm_mae,  alpha=band_alpha)
+    draw_binned_band_and_median(bot, xs_sm, mae_sm, map_mae_y, C_SM, bin_size_sm_mae,  alpha=band_alpha)
+ 
+    # --- 圖例 ---
+    def legend(x, y):
+        y += 20
+        items = [("PhysicSim (our method)", C_PH), ("DC-SMACOF", C_DM), ("SMACOF", C_SM)]
+        dx = 0
+        for label, col in items:
+            if col == C_DM:
+                dx += 65
+            pygame.draw.line(screen, col, (x + dx, y), (x + dx + 20, y), 4)
+            screen.blit(font.render(label, True, (0, 0, 0)), (x + dx + 30, y - 10))
+            dx += 130
+    legend(top.right - 550, top.top + 20)
+    legend(bot.right - 550, bot.top + 20)
+ 
+    pygame.display.flip()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        pygame.image.save(screen, save_path)
+ 
     running = True
     while running:
         for e in pygame.event.get():
