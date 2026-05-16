@@ -77,6 +77,8 @@ def main() -> None:
         _as_mod("run_paper_script.ch6_visualize_single_model")
     elif cmd == "ch6-map":
         _as_mod("run_paper_script.ch6_interaction_map")
+    elif cmd == "ch6-representative":
+        _as_mod("run_paper_script.ch6_visualize_representative")
     else:
         raise SystemExit(f"Unknown command: {cmd}. Run with -h for usage.")
 

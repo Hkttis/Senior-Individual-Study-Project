@@ -393,4 +393,113 @@ def select_median_pos_history(
     return selected_history
 
 
+# =============================================================================
+# Representative-run selection (4-metric robust standardization)
+# =============================================================================
 
+def select_representative_run(
+    all_pos_histories_px,   # List[List[List[(x,y)]]]  — [run][frame][node]
+    dni,
+    ground_truth_positions,
+    directional_data,
+    refer_pos,
+    data,                   # edge data in sim units
+    *,
+    model_name: str = "",
+    verbose: bool = True,
+):
+    """
+    From N runs, select the one closest to the 4-D median vector
+    (Stress, RMSE, VR, MAE) using MAD-standardized Euclidean distance.
+
+    Parameters
+    ----------
+    all_pos_histories_px : list of runs, each run = list of frames,
+                           each frame = list of (x,y) in pixel/y-up coords.
+    data                 : edge data **already in sim units** (data_Li2sim applied).
+
+    Returns
+    -------
+    dict with keys:
+        "run_idx"       : int
+        "history"       : the selected run's full pos_history
+        "final_pos"     : last frame of the selected run
+        "metrics"       : dict {Stress, RMSE, VR, MAE} for selected run
+        "median_vector" : the 4-D median
+        "std_distance"  : standardized distance of selected run
+        "all_metrics"   : list of dicts for all runs (for auditing)
+    """
+    import numpy as np
+
+    n_runs = len(all_pos_histories_px)
+    all_ks, all_rmse, all_vr, all_mae = [], [], [], []
+
+    for r in range(n_runs):
+        last = all_pos_histories_px[r][-1]
+        last_arr = np.asarray(last, dtype=float)
+
+        ks = float(calculate_kruskals_stress(
+            dni, deepcopy(pos_matrix_sim2km(deepcopy(last))), data
+        ))
+        rmse = float(rmse_km_from_pixels(deepcopy(last), refer_pos, dni, ground_truth_positions))
+        vr = float(direction_violation_rate(last_arr, directional_data, dni))
+        mae = float(mean_angular_error_violations(last_arr, directional_data, dni))
+
+        all_ks.append(ks)
+        all_rmse.append(rmse)
+        all_vr.append(vr)
+        all_mae.append(mae)
+
+    # Build N×4 matrix
+    M = np.column_stack([all_ks, all_rmse, all_vr, all_mae])
+    col_names = ["Stress", "RMSE", "VR", "MAE"]
+
+    # Median vector
+    med = np.median(M, axis=0)
+
+    # MAD (median absolute deviation) per column
+    mad = np.median(np.abs(M - med), axis=0)
+    # Fallback: if MAD==0 for a column, use IQR/1.349
+    for c in range(4):
+        if mad[c] < 1e-15:
+            q75, q25 = np.percentile(M[:, c], [75, 25])
+            iqr = q75 - q25
+            mad[c] = iqr / 1.349 if iqr > 1e-15 else 1.0  # ultimate fallback
+
+    # Standardized Euclidean distance
+    Z = (M - med) / mad
+    dists = np.sqrt(np.sum(Z ** 2, axis=1))
+    chosen = int(np.argmin(dists))
+
+    # Build per-run metrics list
+    all_metrics = []
+    for r in range(n_runs):
+        all_metrics.append({
+            "Stress": all_ks[r], "RMSE": all_rmse[r],
+            "VR": all_vr[r], "MAE": all_mae[r],
+            "std_dist": float(dists[r]),
+        })
+
+    result = {
+        "run_idx": chosen,
+        "history": all_pos_histories_px[chosen],
+        "final_pos": all_pos_histories_px[chosen][-1],
+        "metrics": {
+            "Stress": all_ks[chosen], "RMSE": all_rmse[chosen],
+            "VR": all_vr[chosen], "MAE": all_mae[chosen],
+        },
+        "median_vector": {col_names[c]: float(med[c]) for c in range(4)},
+        "mad_vector":    {col_names[c]: float(mad[c]) for c in range(4)},
+        "std_distance":  float(dists[chosen]),
+        "all_metrics":   all_metrics,
+    }
+
+    if verbose:
+        print(f"\n[Representative Run Selection] {model_name}")
+        print(f"  Median vector : Stress={med[0]:.6f}, RMSE={med[1]:.2f}, VR={med[2]:.4f}, MAE={med[3]:.4f}")
+        print(f"  MAD vector    : Stress={mad[0]:.6f}, RMSE={mad[1]:.2f}, VR={mad[2]:.4f}, MAE={mad[3]:.4f}")
+        print(f"  Selected run  : #{chosen}  (std_dist={dists[chosen]:.4f})")
+        print(f"    Stress={all_ks[chosen]:.6f}, RMSE={all_rmse[chosen]:.2f}, "
+              f"VR={all_vr[chosen]:.4f}, MAE={all_mae[chosen]:.4f}")
+
+    return result
