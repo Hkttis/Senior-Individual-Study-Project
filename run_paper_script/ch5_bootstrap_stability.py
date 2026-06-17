@@ -1,4 +1,4 @@
-"""scripts.ch5_bootstrap_stability
+"""run_paper_script.ch5_bootstrap_stability
 
 Chapter 5 — Bootstrap stability test.
 
@@ -9,7 +9,10 @@ uncertainty using:
 
 Usage
 -----
-python -m scripts.ch5_bootstrap_stability --n-bootstrap 300 --spring-jitter 0.05 --repulse-jitter 0.20
+Run from the physics_simulation project root.
+Default fixed anchors come from data/site_rmse_points.csv (use_role=anchor).
+
+python -m run_paper_script.paper_run ch5-bootstrap --n-bootstrap 300 --spring-jitter 0.05 --repulse-jitter 0.20
 
 Notes
 -----
@@ -31,7 +34,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--fixed",
         type=str,
-        default="鄯善,都護治/烏壘",
+        default="",
         help="Comma-separated anchor labels (must exist in ground truth).",
     )
     return p.parse_args()
@@ -39,16 +42,16 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
-    fixed_point_labels = [x.strip() for x in args.fixed.split(",") if x.strip()]
-
     # We call the updated bootstrap helpers (see library/bootstrap_and_visualization.py).
     from library.bootstrap_and_visualization import bootstrap_dynamics, plot_multi_ellipses, plot_kde_combined
     import numpy as np
 
-    from library.data_io import uploading_ground_truth, save_bootstrap_data
+    from library.data_io import uploading_ground_truth, save_bootstrap_data, get_anchor_labels
     from library.config import refer_pos_sim, refer_pos, FILE_PATHS
     from library.initialization import load_ini_data_from_csv
     from library.coordinates import flipping_y
+
+    fixed_point_labels = [x.strip() for x in args.fixed.split(",") if x.strip()] or get_anchor_labels()
 
     _graph, vertice, dni, _edges, data = load_ini_data_from_csv(FILE_PATHS)
     gt_lonlat = uploading_ground_truth(vertice, dni)

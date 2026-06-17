@@ -4,6 +4,47 @@ from library.geometry import inverse_lcc_transformation
 from library.anchor_frame import px_list_to_km_list
 from library.config import km2pix, km2Li
 
+
+def _site_name_from_row(row):
+    return (row.get("model_name") or row.get("節點名稱") or "").strip()
+
+
+def load_site_points():
+    rows = []
+    with open(FILE_PATHS["ground_truth_path"], newline='', encoding='utf-8-sig') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            name = _site_name_from_row(row)
+            if not name:
+                continue
+            rows.append({
+                "name": name,
+                "lon": row.get("lon", ""),
+                "lat": row.get("lat", ""),
+                "use_role": (row.get("use_role") or "").strip(),
+            })
+    return rows
+
+
+def get_anchor_labels():
+    return [row["name"] for row in load_site_points() if row["use_role"] == "anchor"]
+
+
+def get_test_site_labels():
+    return [row["name"] for row in load_site_points() if row["use_role"] == "test"]
+
+
+def get_anchor_align_label():
+    labels = [row["name"] for row in load_site_points() if row["use_role"] == "anchor_align"]
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) > 1:
+        raise ValueError(f"Expected at most one anchor_align in {FILE_PATHS['ground_truth_path']}, got {labels}")
+    anchors = get_anchor_labels()
+    if not anchors:
+        raise ValueError(f"Expected at least one anchor in {FILE_PATHS['ground_truth_path']}")
+    return anchors[0]
+
 # data input
 def read_CHEN_csvfile() :
     # csv : 地點一 地點二 里程 里程 make it compatible to previous method
@@ -22,30 +63,37 @@ def uploading_directional_data():
     directional_data= []
     with open(csv_file_path, mode="r", newline="", encoding="utf-8-sig") as file:
         reader = csv.reader(file)  # Create a CSV reader object
+        next(reader, None)
         for row in reader:
             directional_data.append(row)
     return directional_data
 def uploading_ground_truth(vertice,dni) :
     # uploading ground_truth files
-    with open(FILE_PATHS["ground_truth_path"], newline='', encoding='utf-8') as csvfile:
-        ## column 3 4 5 6 7 13 23 name, 24 25 x,y coordinates
-        reader = csv.reader(csvfile)  # Create a CSV reader object
-        next(reader)
-        gt_tmp_data = []
-        for row in reader:
-            gt_tmp_data.append([[row[2],row[3],row[4],row[5],row[6],row[12],row[22]],[float(row[23]),float(row[24])]])
     n = len(dni)
     ground_truth_positions = [ [0,0] for i in range(n)]
-    for row in gt_tmp_data :
-        for name in row[0] : 
-            if name in dni : # the name matchs the one in CHEN
-                ground_truth_positions[dni[name]] = row[1]
-                break
+    with open(FILE_PATHS["ground_truth_path"], newline='', encoding='utf-8-sig') as csvfile:
+        reader = csv.DictReader(csvfile)
+        seen = set()
+        for row in reader:
+            name = _site_name_from_row(row)
+            if not name:
+                raise ValueError("Ground truth row is missing model_name/節點名稱.")
+            if name in seen:
+                raise ValueError(f"Duplicate ground truth model_name/節點名稱: {name}")
+            seen.add(name)
+            lon = row.get("lon", "")
+            lat = row.get("lat", "")
+            if lon == "" or lat == "":
+                raise ValueError(f"Ground truth row for {name} is missing lon/lat.")
+            if name not in dni:
+                raise ValueError(f"Ground truth model_name/節點名稱 not found in dni: {name}")
+            ground_truth_positions[dni[name]] = [float(lon), float(lat)]
     return ground_truth_positions
 
 def save_vis_data(vertice, dni, pos_matrix, ground_truth_positions, refer_pos):
     pos_matrix_km = px_list_to_km_list(pos_matrix, tuple(refer_pos), km2pix)
-    wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km, ground_truth_positions[dni["鄯善"]])
+    anchor_align_label = get_anchor_align_label()
+    wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km, ground_truth_positions[dni[anchor_align_label]])
 
     vis_data = []
     for i,label in enumerate(vertice) :
@@ -62,7 +110,8 @@ def save_bootstrap_data(vertice, dni, samples, ground_truth_positions, refer_pos
         pos_matrix_sample_km = px_list_to_km_list(pos_matrix_sample, tuple(refer_pos), km2pix)
         for pos in pos_matrix_sample_km :
             pos_matrix_km.append(pos)
-    wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km,ground_truth_positions[dni["鄯善"]])
+    anchor_align_label = get_anchor_align_label()
+    wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km,ground_truth_positions[dni[anchor_align_label]])
 
     bootstrap_data = []
     countries_N = len(vertice)
@@ -75,7 +124,8 @@ def save_bootstrap_data(vertice, dni, samples, ground_truth_positions, refer_pos
 
 def save_err_data(vertice, dni, pos_matrix, ground_truth_positions, refer_pos, errors, edge_labels):
     pos_matrix_km = px_list_to_km_list(pos_matrix, tuple(refer_pos), km2pix)
-    wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km, ground_truth_positions[dni["鄯善"]])
+    anchor_align_label = get_anchor_align_label()
+    wgs_pos_matrix = inverse_lcc_transformation(pos_matrix_km, ground_truth_positions[dni[anchor_align_label]])
 
     
     err_data = []
@@ -353,7 +403,8 @@ def save_ini_data_to_csv(
         #    We record group_id to reconstruct the nested structure.
         for gid, group in enumerate(graph):
             for row in group:
-                src, dst, w1, w2 = row
+                src, dst, w1 = row[:3]
+                w2 = row[3] if len(row) > 3 else ""
                 w.writerow({
                     "section": "GRAPH",
                     "group_id": gid,
@@ -389,7 +440,9 @@ def save_ini_data_to_csv(
             })
 
         # 5) DATA (verbatim; this is a single flat list, NOT grouped)
-        for src, dst, w1, w2 in data:
+        for row in data:
+            src, dst, w1 = row[:3]
+            w2 = row[3] if len(row) > 3 else ""
             w.writerow({
                 "section": "DATA",
                 "group_id": "",
@@ -434,7 +487,10 @@ def load_ini_data_from_csv(
                     continue
                 src = row.get("src", ""); dst = row.get("dst", "")
                 w1  = row.get("w1",  ""); w2  = row.get("w2",  "")
-                graph_groups.setdefault(gid, []).append([src, dst, w1, w2])
+                graph_row = [src, dst, w1]
+                if w2 != "":
+                    graph_row.append(w2)
+                graph_groups.setdefault(gid, []).append(graph_row)
 
             elif section == "VERTICE":
                 name = row.get("name", "")
@@ -456,7 +512,10 @@ def load_ini_data_from_csv(
             elif section == "DATA":
                 src = row.get("src", ""); dst = row.get("dst", "")
                 w1  = row.get("w1",  ""); w2  = row.get("w2",  "")
-                data.append([src, dst, w1, w2])
+                data_row = [src, dst, w1]
+                if w2 != "":
+                    data_row.append(w2)
+                data.append(data_row)
 
             else:
                 # Unknown section—ignore silently

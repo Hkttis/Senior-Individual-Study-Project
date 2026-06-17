@@ -12,6 +12,9 @@ Then visualizes convergence (stress + RMSE bands) using:
 
 Usage
 -----
+Run from the physics_simulation project root.
+Default fixed anchors come from data/site_rmse_points.csv (use_role=anchor).
+
 python -m run_paper_script.paper_run ch5-compare --seed 37
 """
 
@@ -30,7 +33,7 @@ from library.config import (
     REPULSION_STRENGTH_BASE,
     DIRECTIONAL_FORCE_MAGNITUDE_BASE,
 )
-from library.data_io import load_ini_data_from_csv, uploading_ground_truth, uploading_directional_data
+from library.data_io import load_ini_data_from_csv, uploading_ground_truth, uploading_directional_data, get_anchor_labels
 from library.initialization import generate_CHEN_initial_positions
 from library.units import data_Li2sim
 from library.physics import main_physics_simulation
@@ -43,7 +46,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--fixed",
         type=str,
-        default="鄯善,都護治/烏壘",
+        default="",
         help="Comma-separated anchor labels (must exist in ground truth).",
     )
     p.add_argument(
@@ -62,7 +65,7 @@ def _parse_xy(s: str) -> List[float]:
 
 def main() -> None:
     args = _parse_args()
-    fixed_point_labels = [x.strip() for x in args.fixed.split(",") if x.strip()]
+    fixed_point_labels = [x.strip() for x in args.fixed.split(",") if x.strip()] or get_anchor_labels()
     _refer_pos_screen = _parse_xy(args.refer_pos)
 
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)

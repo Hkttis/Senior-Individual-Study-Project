@@ -1,4 +1,4 @@
-"""scripts.ch5_benchmark_models
+"""run_paper_script.ch5_benchmark_models
 
 Chapter 5 — Repeated-measurement benchmark.
 
@@ -12,8 +12,11 @@ all position histories to CSV (for later reuse in figure generation).
 
 Usage
 -----
-python -m scripts.ch5_benchmark_models --n-runs 100
-python -m scripts.ch5_benchmark_models --n-runs 200 --save-histories
+Run from the physics_simulation project root.
+Default fixed anchors come from data/site_rmse_points.csv (use_role=anchor).
+
+python -m run_paper_script.paper_run ch5-benchmark --n-runs 100 --save-histories
+python -m run_paper_script.paper_run ch5-benchmark --n-runs 3 --save-histories
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ import json
 from pathlib import Path
 
 from library.config import OUTPUT_DIR, FILE_PATHS
-from library.data_io import load_ini_data_from_csv, uploading_ground_truth, save_all_pos_histories_px_csv
+from library.data_io import load_ini_data_from_csv, uploading_ground_truth, save_all_pos_histories_px_csv, get_anchor_labels
 
 
 def _parse_args() -> argparse.Namespace:
@@ -32,7 +35,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--fixed",
         type=str,
-        default="鄯善,都護治/烏壘",
+        default="",
         help="Comma-separated anchor labels (must exist in ground truth).",
     )
     p.add_argument(
@@ -41,7 +44,7 @@ def _parse_args() -> argparse.Namespace:
         default="600,500",
         help="Screen anchor pixel, as 'x,y' (y-down).",
     )
-    p.add_argument("--save-histories", action="store_true", help="Save all histories to CSV")
+    p.add_argument("--save-histories", "--save", action="store_true", help="Save all histories to CSV")
     p.add_argument(
         "--outdir",
         type=str,
@@ -58,7 +61,7 @@ def _parse_xy(s: str):
 
 def main() -> None:
     args = _parse_args()
-    fixed_point_labels = [x.strip() for x in args.fixed.split(",") if x.strip()]
+    fixed_point_labels = [x.strip() for x in args.fixed.split(",") if x.strip()] or get_anchor_labels()
     refer_pos = _parse_xy(args.refer_pos)
 
     # Ground truth is needed to determine anchor lon/lat.

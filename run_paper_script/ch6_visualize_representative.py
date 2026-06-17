@@ -5,12 +5,17 @@ then produce 6.2 convergence / 6.3 error-map / 6.4 overlay figures.
 
 Usage
 -----
-python -m run_paper_script.paper_run ch6-representative or
+Run from the physics_simulation project root.
+Default fixed anchors come from data/site_rmse_points.csv (use_role=anchor).
+
+python -m run_paper_script.paper_run ch6-representative
+
+Or pass explicit history CSVs:
 
 python -m run_paper_script.paper_run ch6-representative `
-   --csv-sm "C:\\Users\\hktti\\Desktop\\project\\results_data_copy\\all_pos_sm_px_data 100_runs_DCandDatafixed_0405.csv" `
-   --csv-dm "C:\\Users\\hktti\\Desktop\\project\\results_data_copy\\all_pos_dm_px_data 100_runs_DCandDatafixed_0405.csv" `
-   --csv-ph "C:\\Users\\hktti\\Desktop\\project\\results_data_copy\\all_pos_sm_ph_data 100_runs_DCandDatafixed_0405.csv"
+   --csv-sm "results_data/all_pos_sm_px_data.csv" `
+   --csv-dm "results_data/all_pos_dm_px_data.csv" `
+   --csv-ph "results_data/all_pos_sm_ph_data.csv"
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from library.config import FILE_PATHS, refer_pos, refer_pos_sim, refer_pos_scree
 from library.data_io import (
     load_ini_data_from_csv, uploading_ground_truth,
     uploading_directional_data, _read_model_csv,
+    get_anchor_labels, get_anchor_align_label,
 )
 from library.units import data_Li2sim
 from library.coordinates import flipping_y
@@ -39,7 +45,7 @@ from MDS_model.plot_node_link_diagram import wrong_directions_nonflip
 
 def _parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--fixed", type=str, default="鄯善,都護治/烏壘")
+    p.add_argument("--fixed", type=str, default="")
     p.add_argument("--csv-sm", type=str, default=FILE_PATHS["save_all_pos_sm_px_data"])
     p.add_argument("--csv-dm", type=str, default=FILE_PATHS["save_all_pos_dm_px_data"])
     p.add_argument("--csv-ph", type=str, default=FILE_PATHS["save_all_pos_ph_px_data"])
@@ -66,7 +72,8 @@ def _flip_for_display_keep_anchor(pos_yup, anchor_idx, target_anchor_xy):
 
 def main():
     args = _parse_args()
-    fixed_labels = [x.strip() for x in args.fixed.split(",") if x.strip()]
+    fixed_labels = [x.strip() for x in args.fixed.split(",") if x.strip()] or get_anchor_labels()
+    anchor_align_label = get_anchor_align_label()
 
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
     gt_lonlat = uploading_ground_truth(vertice, dni)
@@ -153,7 +160,7 @@ def main():
 
         final_ydown = _flip_for_display_keep_anchor(
             deepcopy(final_yup),
-            anchor_idx=dni["鄯善"],
+            anchor_idx=dni[anchor_align_label],
             target_anchor_xy=tuple(refer_pos_screen),
         )
 
@@ -166,7 +173,7 @@ def main():
         if not args.skip_overlay:
             ground_truth_comparison(
                 vertice, dni, data_sim, deepcopy(gt_lonlat),
-                final_ydown[dni["鄯善"]],
+                final_ydown[dni[anchor_align_label]],
                 deepcopy(final_ydown),
                 file_name=f"{name}_",
             )

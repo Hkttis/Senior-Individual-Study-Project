@@ -1,4 +1,4 @@
-"""scripts.ch5_run_baseline
+"""run_paper_script.ch5_run_baseline
 
 Chapter 5 — Baseline model runs.
 
@@ -16,8 +16,11 @@ experimental section can be reproduced with a single command.
 
 Usage
 -----
-python -m scripts.ch5_run_baseline --model StressMajorization --vis
-python -m scripts.ch5_run_baseline --model DirectedMDS --no-vis
+Run from the physics_simulation project root.
+Default fixed anchors come from data/site_rmse_points.csv (use_role=anchor).
+
+python -m run_paper_script.paper_run ch5-baseline --model StressMajorization --vis
+python -m run_paper_script.paper_run ch5-baseline --model DirectedMDS --no-vis
 """
 
 from __future__ import annotations

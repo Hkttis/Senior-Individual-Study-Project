@@ -1,7 +1,28 @@
 import numpy as np
+import csv
 from math import *
 from pyproj import Geod, CRS, Transformer
-from library.config import km2pix, km2Li
+from library.config import km2pix, km2Li, FILE_PATHS
+
+
+def _default_anchor_align_label():
+    with open(FILE_PATHS["ground_truth_path"], newline="", encoding="utf-8-sig") as csvfile:
+        reader = csv.DictReader(csvfile)
+        labels = [
+            (row.get("model_name") or row.get("節點名稱") or "").strip()
+            for row in reader
+            if (row.get("use_role") or "").strip() == "anchor_align"
+        ]
+    labels = [label for label in labels if label]
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) > 1:
+        raise ValueError(f"Expected at most one anchor_align in {FILE_PATHS['ground_truth_path']}, got {labels}")
+    from library.data_io import get_anchor_labels
+    anchors = get_anchor_labels()
+    if not anchors:
+        raise ValueError(f"Expected at least one anchor in {FILE_PATHS['ground_truth_path']}")
+    return anchors[0]
 
 def shift(pos_matrix,scale,center_pos) : # Shift the average of points to the center_pos
     sumx = 0
@@ -38,7 +59,7 @@ def lcc_transformation(dni, ground_truth_positions):
             lcc_xy_m.append((None,None))
         else :
             lcc_xy_m.append(transformer.transform(lon, lat))
-    align_pos = lcc_xy_m[dni['鄯善']]
+    align_pos = lcc_xy_m[dni[_default_anchor_align_label()]]
     lcc_xy_km = []
     for x,y in lcc_xy_m :
         if x==None and y==None :
@@ -47,7 +68,7 @@ def lcc_transformation(dni, ground_truth_positions):
             lcc_xy_km.append(((x-align_pos[0])/1000 , (y-align_pos[1])/1000))
     return lcc_xy_km
 
-def lcc_transformation_with_anchor(dni, ground_truth_positions, anchor_label="鄯善"):
+def lcc_transformation_with_anchor(dni, ground_truth_positions, anchor_label=None):
     """
     Lambert Conformal Conic projection -> anchor-centered km coordinates.
 
@@ -60,6 +81,8 @@ def lcc_transformation_with_anchor(dni, ground_truth_positions, anchor_label="�
     anchor_label : str
         Which known node is used as the frame origin (0,0) in projected km.
     """
+    if anchor_label is None:
+        anchor_label = _default_anchor_align_label()
     if anchor_label not in dni:
         raise KeyError(f"anchor_label {anchor_label!r} not found in dni")
 
@@ -101,8 +124,8 @@ def lcc_transformation_with_anchor(dni, ground_truth_positions, anchor_label="�
 
 
 def lcc_transformation(dni, ground_truth_positions):
-    # Backward-compatible wrapper (default anchor = 鄯善)
-    return lcc_transformation_with_anchor(dni, ground_truth_positions, anchor_label="鄯善")
+    # Backward-compatible wrapper (default anchor = use_role anchor_align)
+    return lcc_transformation_with_anchor(dni, ground_truth_positions)
 
 def inverse_lcc_transformation(lcc_xy_km, wgs_align_pos):
     # Define projection parameters again (must be identical to the original)

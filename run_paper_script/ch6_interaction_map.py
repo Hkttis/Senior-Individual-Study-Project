@@ -1,4 +1,4 @@
-"""scripts.ch6_interaction_map
+"""run_paper_script.ch6_interaction_map
 
 Chapter 6 — Interactive overlay map.
 
@@ -13,7 +13,9 @@ the workflow as a chapter-aligned entrypoint.
 
 Usage
 -----
-python -m scripts.ch6_interaction_map
+Run from the physics_simulation project root.
+
+python -m run_paper_script.paper_run ch6-map
 """
 
 from __future__ import annotations

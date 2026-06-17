@@ -4,7 +4,7 @@ from copy import deepcopy
 import builtins
 
 from library.units import *
-from library.data_io import uploading_ground_truth
+from library.data_io import uploading_ground_truth, get_anchor_align_label, load_site_points
 from library.anchor_frame import px_list_to_km_list
 from library.geometry import lcc_transformation
 from library.coordinates import flipping_y
@@ -44,7 +44,7 @@ def procrustes_align_by_fixed_points(
     fixed_point_lonlat,            # [(lon,lat), ...] same order/length as labels
     dni,
     refer_pos = [600, 500],   # in pixel units
-    anchor_label="鄯善",
+    anchor_label=None,
 ):
     """
     Align a single Li-frame to a set of fixed points using 2D orthogonal Procrustes.
@@ -59,6 +59,17 @@ def procrustes_align_by_fixed_points(
       - Translation is handled by anchor-centering both sets.
     """
     
+    if anchor_label is None:
+        anchor_label = get_anchor_align_label()
+    fixed_point_labels = list(fixed_point_labels)
+    fixed_point_lonlat = list(fixed_point_lonlat)
+    if anchor_label not in fixed_point_labels:
+        site_points = {row["name"]: (float(row["lon"]), float(row["lat"])) for row in load_site_points()}
+        if anchor_label not in site_points:
+            raise ValueError(f"Anchor align '{anchor_label}' is missing from site points.")
+        fixed_point_labels.append(anchor_label)
+        fixed_point_lonlat.append(site_points[anchor_label])
+
     if len(fixed_point_labels) == 0 or (len(fixed_point_labels) != len(fixed_point_lonlat)):
         return sim_km
     
@@ -139,11 +150,12 @@ def procrustes_analysis_to_gt(flip, vertice, dni, refer_pos) :
     if len(flip) != len(vertice):
         raise ValueError("pos_matrix and vertice must have the same length.")
 
+    anchor_label = get_anchor_align_label()
     # Find the anchor index (first occurrence if duplicated)
     try:
-        anchor_idx = dni["鄯善"]
+        anchor_idx = dni[anchor_label]
     except KeyError:
-        raise KeyError("Label '鄯善' not found in vertice.") from None
+        raise KeyError(f"Label '{anchor_label}' not found in vertice.") from None
 
     
     # 1) Do Orthogonal Procrustes to best align with ground truth positions
@@ -167,7 +179,7 @@ def procrustes_analysis_to_gt(flip, vertice, dni, refer_pos) :
         if gtx is not None and gty is not None:
             DeX.append(flip[i])
             Deg.append([gtx, gty])
-        if vertice[i] == "鄯善":
+        if vertice[i] == anchor_label:
             new_anc = len(DeX) - 1  # new index of anchor in filtered list
     
     flip = deepcopy(DeX)
@@ -192,7 +204,7 @@ def procrustes_analysis_to_gt(flip, vertice, dni, refer_pos) :
     return aligned_pos.tolist()
 
 # For directed MDS
-def alignment_and_scaling(pos_matrix, vertice, dni, refer_pos, y_down=True):
+def alignment_and_scaling(pos_matrix, vertice, dni, refer_pos, y_down=True, anchor_label=None):
     """
     Scale all coordinates by scale and translate so that the point labeled
     '鄯善' matches refer_pos.
@@ -205,11 +217,13 @@ def alignment_and_scaling(pos_matrix, vertice, dni, refer_pos, y_down=True):
     if len(pos_matrix) != len(vertice):
         raise ValueError("pos_matrix and vertice must have the same length.")
     
+    if anchor_label is None:
+        anchor_label = get_anchor_align_label()
     # Find the anchor index (first occurrence if duplicated)
     try:
-        anchor_idx = dni["鄯善"]
-    except ValueError:
-        raise ValueError("Label '鄯善' not found in vertice.") from None
+        anchor_idx = dni[anchor_label]
+    except KeyError:
+        raise ValueError(f"Label '{anchor_label}' not found in vertice.") from None
 
     # 1) Scale by 1/10, turn Li to pixel
     scale = Li2pix

@@ -4,7 +4,7 @@ import builtins
 from library.geometry import *
 from library.metrics import *
 from library.config import km2pix, km2Li, refer_pos, FILE_PATHS
-from library.data_io import uploading_ground_truth, uploading_directional_data
+from library.data_io import uploading_ground_truth, uploading_directional_data, get_anchor_labels, get_anchor_align_label
 from library.visualization import *
 from library.physics import *
 from library.initialization import *
@@ -54,7 +54,8 @@ def run_directed_MDS( vis = True ):
         pos_matrix = flipping_y(pos_matrix)
         visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, zoom_area = None , file_name = "DirectedMDS_")
         #visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, zoom_area = (200, 200, 800, 400) , file_name = "DirectedMDS_")
-        ground_truth_comparison(vertice,dni,data_Li2sim(data), uploading_ground_truth(vertice,dni),pos_matrix[dni["鄯善"]], deepcopy(pos_matrix), file_name = "DirectedMDS_")
+        anchor_align_label = get_anchor_align_label()
+        ground_truth_comparison(vertice,dni,data_Li2sim(data), uploading_ground_truth(vertice,dni),pos_matrix[dni[anchor_align_label]], deepcopy(pos_matrix), file_name = "DirectedMDS_")
         
     return pos_history
 
@@ -74,7 +75,7 @@ def run_stress_majorization( vis = True ):
 
 
         # temporalily use ground truth to simulate given fixed points' positions
-        fixed_point_labels = ["鄯善","都護治/烏壘"]
+        fixed_point_labels = get_anchor_labels()
         gt = uploading_ground_truth(vertice,dni)
         fixed_point_lonlat = [ tuple(gt[dni[cout]]) for cout in fixed_point_labels]
         
@@ -83,7 +84,8 @@ def run_stress_majorization( vis = True ):
         pos_matrix = flipping_y(pos_matrix)
 
         visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, file_name = "StressMj_")
-        ground_truth_comparison(vertice,dni,data_Li2sim(data), uploading_ground_truth(vertice,dni),pos_matrix[dni["鄯善"]], deepcopy(pos_matrix), file_name = "StressMj_")
+        anchor_align_label = get_anchor_align_label()
+        ground_truth_comparison(vertice,dni,data_Li2sim(data), uploading_ground_truth(vertice,dni),pos_matrix[dni[anchor_align_label]], deepcopy(pos_matrix), file_name = "StressMj_")
 
     return pos_history
 
@@ -175,6 +177,9 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
     
     gt_lonlat = uploading_ground_truth(vertice, dni)
     directional_data = uploading_directional_data()
+    if not fixed_point_labels:
+        fixed_point_labels = get_anchor_labels()
+        fixed_point_lonlat = [tuple(gt_lonlat[dni[label]]) for label in fixed_point_labels]
 
     # Running means of histories (in pixel units)
     mean_hist_sm = None

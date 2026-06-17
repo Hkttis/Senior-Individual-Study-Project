@@ -13,7 +13,7 @@ def download_and_upload_allpos_in_runs():
     
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
     
-    fixed_point_labels = ["鄯善","都護治/烏壘"]
+    fixed_point_labels = get_anchor_labels()
     gt = uploading_ground_truth(vertice,dni)
     fixed_points_lonlat = [ tuple(gt[dni[cout]]) for cout in fixed_point_labels]
     
@@ -43,7 +43,7 @@ def download_and_upload_allpos_in_runs():
 if __name__ == "__main__" :
     
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
-    fixed_point_labels = ["鄯善","都護治/烏壘"]
+    fixed_point_labels = get_anchor_labels()
     gt = uploading_ground_truth(vertice,dni)
     fixed_points_lonlat = [ tuple(gt[dni[cout]]) for cout in fixed_point_labels]
     run_physics_simulation_model( fixed_point_labels, fixed_points_lonlat, vis = True)
@@ -52,7 +52,7 @@ if __name__ == "__main__" :
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
     
     # temporalily use ground truth to simulate given fixed points' positions
-    fixed_point_labels = ["鄯善","都護治/烏壘"]
+    fixed_point_labels = get_anchor_labels()
     gt = uploading_ground_truth(vertice,dni)
     fixed_points_lonlat = [ tuple(gt[dni[cout]]) for cout in fixed_point_labels]
     

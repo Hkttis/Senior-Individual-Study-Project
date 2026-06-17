@@ -1,4 +1,4 @@
-"""scripts.ch4_physics_reconstruct
+"""run_paper_script.ch4_physics_reconstruct
 
 Chapter 4 — Core method reproduction.
 
@@ -11,8 +11,12 @@ Chapter 6 scripts take care of publication figures.
 
 Usage
 -----
-python -m scripts.ch4_physics_reconstruct --seed 0 --plot
-python -m scripts.ch4_physics_reconstruct --seed 0 --no-save
+Run from the physics_simulation project root.
+By default, fixed anchors are read from data/site_rmse_points.csv
+(use_role=anchor: 鄯善, 車師前, 都護治/烏壘).
+
+python -m run_paper_script.paper_run ch4 --seed 0 --plot
+python -m run_paper_script.paper_run ch4 --seed 0 --no-save
 
 Outputs
 -------
@@ -49,7 +53,7 @@ from library.config import (
     REPULSION_STRENGTH_BASE,
     DIRECTIONAL_FORCE_MAGNITUDE_BASE,
 )
-from library.data_io import load_ini_data_from_csv, uploading_ground_truth, uploading_directional_data
+from library.data_io import load_ini_data_from_csv, uploading_ground_truth, uploading_directional_data, get_anchor_labels
 from library.initialization import generate_CHEN_initial_positions
 from library.units import data_Li2sim
 from library.physics import main_physics_simulation
@@ -62,7 +66,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--fixed",
         type=str,
-        default="鄯善,都護治/烏壘",
+        default="",
         help="Comma-separated anchor labels (must exist in ground truth).",
     )
     p.add_argument(
@@ -142,7 +146,7 @@ def run(seed: int, fixed_point_labels: List[str], refer_pos_screen: List[float],
 
 def main() -> None:
     args = _parse_args()
-    fixed_point_labels = [x.strip() for x in args.fixed.split(",") if x.strip()]
+    fixed_point_labels = [x.strip() for x in args.fixed.split(",") if x.strip()] or get_anchor_labels()
     refer_pos_screen = _parse_xy(args.refer_pos)
 
     artifacts = run(

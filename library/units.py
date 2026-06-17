@@ -16,8 +16,8 @@ metric : km
 def data_Li2sim( data ) :
     sim_data = deepcopy(data)
     for row in sim_data :
-        row[2] = int(row[2])*Li2sim
-        row[3] = int(row[3])*Li2sim
+        for i in range(2, len(row)):
+            row[i] = int(row[i])*Li2sim
     return sim_data
 
 def gt_km2sim( gt_xy_km ):

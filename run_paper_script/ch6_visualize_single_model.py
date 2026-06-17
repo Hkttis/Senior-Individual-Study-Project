@@ -1,4 +1,4 @@
-"""scripts.ch6_visualize_single_model
+"""run_paper_script.ch6_visualize_single_model
 
 Chapter 6 — Figure generation utilities.
 
@@ -19,8 +19,13 @@ Supported models
 
 Usage
 -----
-python -m scripts.ch6_visualize_single_model --model PhysicsSim --seed 0
-python -m scripts.ch6_visualize_single_model --model StressMajorization
+Run from the physics_simulation project root.
+Default fixed anchors come from data/site_rmse_points.csv (use_role=anchor).
+Use --no-wait for non-interactive smoke tests.
+
+python -m run_paper_script.paper_run ch6-visualize --model PhysicsSim --seed 0 --no-wait
+python -m run_paper_script.paper_run ch6-visualize --model SMACOF --no-wait
+python -m run_paper_script.paper_run ch6-visualize --model DC-SMACOF --no-wait
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ from typing import List
 import numpy as np
 
 from library.config import FILE_PATHS, refer_pos_screen, refer_pos_sim, refer_pos
-from library.data_io import load_ini_data_from_csv, uploading_ground_truth, uploading_directional_data, save_vis_data, save_err_data
+from library.data_io import load_ini_data_from_csv, uploading_ground_truth, uploading_directional_data, save_vis_data, save_err_data, get_anchor_labels, get_anchor_align_label
 from library.units import data_Li2sim
 from library.coordinates import flipping_y
 from library.visualization import (
@@ -58,7 +63,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--fixed",
         type=str,
-        default="鄯善,都護治/烏壘",
+        default="",
         help="Comma-separated anchor labels (must exist in ground truth).",
     )
     p.add_argument(
@@ -69,6 +74,7 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument("--skip-heatmap", action="store_true", help="Do not display force heatmap")
     p.add_argument("--skip-nodelink", action="store_true", help="Do not display node-link diagram")
+    p.add_argument("--no-wait", action="store_true", help="Save figures and exit without waiting for windows to close")
     return p.parse_args()
 
 
@@ -138,7 +144,8 @@ def _run_baseline(model: str, fixed_point_labels: List[str]):
 
 def main() -> None:
     args = _parse_args()
-    fixed_point_labels = [x.strip() for x in args.fixed.split(",") if x.strip()]
+    fixed_point_labels = [x.strip() for x in args.fixed.split(",") if x.strip()] or get_anchor_labels()
+    anchor_align_label = get_anchor_align_label()
     zoom_area = _parse_zoom(args.zoom)
 
     if args.model == "PhysicsSim":
@@ -156,10 +163,10 @@ def main() -> None:
 
     # 2) Error map (full + zoom)
     errors, edge_labels = visualize_error_map_official(
-        deepcopy(pos_px), vertice, dni, data, wrong_dir, zoom_area=None, file_name=file_prefix
+        deepcopy(pos_px), vertice, dni, data, wrong_dir, zoom_area=None, file_name=file_prefix, wait=not args.no_wait
     )
     visualize_error_map_official(
-        deepcopy(pos_px), vertice, dni, data, wrong_dir, zoom_area=zoom_area, file_name=file_prefix
+        deepcopy(pos_px), vertice, dni, data, wrong_dir, zoom_area=zoom_area, file_name=file_prefix, wait=not args.no_wait
     )
 
     # 3) GT overlay
@@ -168,9 +175,10 @@ def main() -> None:
         dni,
         data_Li2sim(data),
         deepcopy(gt_lonlat),
-        pos_px[dni["鄯善"]],
+        pos_px[dni[anchor_align_label]],
         deepcopy(pos_px),
         file_name=file_prefix,
+        wait=not args.no_wait,
     )
     # 4) Force heatmap (recommended for physics)
     if not args.skip_heatmap:
@@ -184,6 +192,7 @@ def main() -> None:
             sigma_px=28.0,
             show_points=True,
             window_caption=f"Force Heatmap ({args.model})",
+            wait=not args.no_wait,
         )
     # 5) Node-link diagram 
     if not args.skip_nodelink:
@@ -193,6 +202,7 @@ def main() -> None:
             edges=edges,
             directed=False,
             caption=f"Node-Link ({args.model})",
+            wait=not args.no_wait,
         )
 
     # 6) Save data for interactive map

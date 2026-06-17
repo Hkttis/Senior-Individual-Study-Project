@@ -21,26 +21,29 @@ import math
 
 # --- Project paths --------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_DATA_ROOT = PROJECT_ROOT.parent.parent / "project"
 DATA_DIR = PROJECT_ROOT / "data"
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
+RESULTS_DATA_DIR = PROJECT_ROOT / "results_data"
 OUTPUT_DIR.mkdir(exist_ok=True)
+RESULTS_DATA_DIR.mkdir(exist_ok=True)
 
 # --- File paths (user-local defaults + relative fallback) -----------------
 FILE_PATHS: Dict[str, str] = {
-    "chen_data": "C:/Users/hktti/Desktop/project/csv doc utf8/漢書_陳世良_utf8.csv",
-    "directional_data": "C:/Users/hktti/Desktop/project/csv doc utf8/方向.csv",
-    "classification_data": "C:/Users/hktti/Desktop/project/csv doc utf8/國家分類.csv",
-    "output_csv": "cities_pos_try3.csv",
+    "chen_data": str(DATA_DIR / "distance_edges_verified.csv"),
+    "directional_data": str(DATA_DIR / "direction_edges_verified.csv"),
+    "classification_data": str(PROJECT_DATA_ROOT / "csv doc utf8" / "國家分類.csv"),
+    "output_csv": str(PROJECT_ROOT / "cities_pos_try3.csv"),
     "font_path": "C:/Windows/Fonts/msyh.ttc",
-    "ground_truth_path": "C:/Users/hktti/Desktop/project/csv doc utf8/西漢古城地理位置資訊.csv",
-    "visualization_data": "C:/Users/hktti/Desktop/project/results/visualization_data.json",
-    "save_vis_data": "C:/Users/hktti/Desktop/project/results_data/vis_data.csv",
-    "save_bootstrap_data": "C:/Users/hktti/Desktop/project/results_data/bootstrap_data.csv",
-    "save_err_data": "C:/Users/hktti/Desktop/project/results_data/err_data.csv",
-    "save_all_pos_sm_px_data": "C:/Users/hktti/Desktop/project/results_data/all_pos_sm_px_data.csv",
-    "save_all_pos_dm_px_data": "C:/Users/hktti/Desktop/project/results_data/all_pos_dm_px_data.csv",
-    "save_all_pos_ph_px_data": "C:/Users/hktti/Desktop/project/results_data/all_pos_sm_ph_data.csv",
-    "ini_data": "C:/Users/hktti/Desktop/project/results_data/ini_data.csv",
+    "ground_truth_path": str(DATA_DIR / "site_rmse_points.csv"),
+    "visualization_data": str(OUTPUT_DIR / "visualization_data.json"),
+    "save_vis_data": str(RESULTS_DATA_DIR / "vis_data.csv"),
+    "save_bootstrap_data": str(RESULTS_DATA_DIR / "bootstrap_data.csv"),
+    "save_err_data": str(RESULTS_DATA_DIR / "err_data.csv"),
+    "save_all_pos_sm_px_data": str(RESULTS_DATA_DIR / "all_pos_sm_px_data.csv"),
+    "save_all_pos_dm_px_data": str(RESULTS_DATA_DIR / "all_pos_dm_px_data.csv"),
+    "save_all_pos_ph_px_data": str(RESULTS_DATA_DIR / "all_pos_sm_ph_data.csv"),
+    "ini_data": str(DATA_DIR / "ini_data.csv"),
 }
 
 

@@ -16,7 +16,7 @@ def main_function(): # avoid global parameters
     refer_pos_screen = [600,500]
     refer_pos = [refer_pos_screen[0], height - refer_pos_screen[1]]  # y-up SIM anchor
 
-    fixed_point_labels = ["鄯善","都護治/烏壘"]
+    fixed_point_labels = get_anchor_labels()
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
     gt = uploading_ground_truth(vertice,dni)
     fixed_points_lonlat = [ tuple(gt[dni[cout]]) for cout in fixed_point_labels]

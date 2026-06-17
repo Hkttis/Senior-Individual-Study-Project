@@ -14,6 +14,8 @@ from library.metrics import *
 from library.geometry import lcc_transformation
 from library.coordinates import flipping_y, flipping_gt
 from library.units import pos_matrix_sim2km, pos_matrix_pix2km
+from library.config import OUTPUT_DIR
+from library.data_io import get_anchor_labels, get_anchor_align_label
 
 
 def plotting_physics_simulation_animation_tmp(space, screen, draw_options,font, data, vertice, dni, pos_history):
@@ -134,7 +136,7 @@ def plot_stress_convergence_log(stress_history, file_name):
     screen.blit(now_stress_text, (20, 10))  # 放在 (20,25) 位置
 
     # Show and save
-    save_path = f"C:/Users/hktti/Desktop/project/results/{file_name}stress_convergence_log.png"
+    save_path = os.path.join(str(OUTPUT_DIR), f"{file_name}stress_convergence_log.png")
     pygame.display.update()
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     pygame.image.save(screen, save_path)
@@ -147,7 +149,7 @@ def plot_stress_convergence_log(stress_history, file_name):
                 running = False
     pygame.quit()
 
-def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists, zoom_area =None , file_name = None):
+def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists, zoom_area =None , file_name = None, wait=True):
     """
     Official version for visualizing node error maps with scaled error color,
     top-5 error labels, and a color legend. Suitable for publication or reports.
@@ -335,7 +337,7 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
     screen.blit(title_surf, (width // 2 - title_surf.get_width() // 2, 10))
     
     # === Save image to specific folder with name based on zoom_area ===
-    save_dir = "C:/Users/hktti/Desktop/project/results"
+    save_dir = str(OUTPUT_DIR)
     os.makedirs(save_dir, exist_ok=True)
 
     if zoom_area:
@@ -347,6 +349,9 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
     save_path = os.path.join(save_dir, filename)
     pygame.image.save(screen, save_path)
 
+    if not wait:
+        pygame.quit()
+        return errors, edge_labels
 
     # === Wait to close window ===
     pygame.display.flip()
@@ -359,7 +364,7 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
     
     return errors, edge_labels
 
-def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_pos, pos_matrix, file_name):
+def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_pos, pos_matrix, file_name, wait=True):
     """
     1) Convert pos_matrix (pixels) to km relative to refer_pos (鄯善 at 0,0).
     2) Project ground-truth lon/lat with LCC to km.
@@ -419,7 +424,7 @@ def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_po
         sim_screen[i] = (int(sx * scale + offset_x), int(sy * scale + offset_y))
 
     # --- 5) Draw Ground Truth nodes (light gray) ---
-    special = {dni.get('鄯善'), dni.get('都護治/烏壘')}
+    special = {dni.get(label) for label in (get_anchor_labels() + [get_anchor_align_label()])}
     for i, p in enumerate(gt_screen):
         if p is None:
             continue
@@ -517,9 +522,13 @@ def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_po
 
     # --- 9) Save & wait ---
     pygame.display.flip()
-    save_path = f"C:/Users/hktti/Desktop/project/results/{file_name}Overlap.png"
+    save_path = os.path.join(str(OUTPUT_DIR), f"{file_name}Overlap.png")
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     pygame.image.save(screen, save_path)
+
+    if not wait:
+        pygame.quit()
+        return
 
     running = True
     while running:
@@ -542,14 +551,14 @@ def plot_three_model_convergence_pygame_pixelaware(
     fixed_point_lonlat = [],
     refer_pos=(600, 500),
     window_size=(1200, 750),
-    anchor_label="鄯善",
+    anchor_label=None,
     orientation="pygame",           # "pygame" (y-down) 或 "north-up"
     stress_y_scale="linear",           # "log" 或 "linear"
     bin_size_iters_dm=10,
     bin_size_iters_sm=25, # ★ 以 iterations 分箱：可設 5、10、20
     band_alpha=38,                  # ★ 包絡帶透明度（~15%）
     pre_process=False,              #  pos_history 是否事先經過轉 px 和 flipping
-    save_path="C:/Users/hktti/Desktop/project/results/ThreeModels_RMSE_Kruskal_pixelaware.png",
+    save_path=os.path.join(str(OUTPUT_DIR), "ThreeModels_RMSE_Kruskal_pixelaware.png"),
 ):
     """
     以「固定 iterations 數」分箱的像素友善收斂圖：
@@ -561,6 +570,8 @@ def plot_three_model_convergence_pygame_pixelaware(
     並保留/強化座標軸與 y-tick 邊界檢查。
     """
 
+    if anchor_label is None:
+        anchor_label = get_anchor_align_label()
     if anchor_label not in dni:
         raise KeyError(f"Anchor '{anchor_label}' not found in dni.")
 
@@ -1014,7 +1025,7 @@ def plot_three_model_direction_convergence(
     fixed_point_lonlat=[],
     refer_pos=(600, 500),
     window_size=(1200, 750),
-    anchor_label="鄯善",
+    anchor_label=None,
     orientation="pygame",
     # === SMACOF 分箱開關（手動調整即可）===
     bin_size_sm_vr=10,          # SMACOF VR 分箱大小；設 1 = 不分箱
@@ -1025,7 +1036,7 @@ def plot_three_model_direction_convergence(
     bin_size_ph_mae=10,         # PhysicSim MAE 分箱大小
     band_alpha=38,
     pre_process=False,
-    save_path="C:/Users/hktti/Desktop/project/results/ThreeModels_VR_MAE.png",
+    save_path=os.path.join(str(OUTPUT_DIR), "ThreeModels_VR_MAE.png"),
 ):
     """
     繪製三模型的方向指標收斂圖：
@@ -1462,7 +1473,8 @@ def plot_force_heatmap_scalar_sum(
     scaling: str = "percentile",  # "percentile" (2–98%) or "linear"
     show_points: bool = False,
     save_path: Optional[str] = None,
-    window_caption: str = "Force Heatmap (scalar magnitudes)"
+    window_caption: str = "Force Heatmap (scalar magnitudes)",
+    wait: bool = True,
 ) -> None:
     """
     Render a Gaussian heatmap where each node's amplitude is proportional to the
@@ -1546,6 +1558,10 @@ def plot_force_heatmap_scalar_sum(
         except Exception:
             pass
         pygame.image.save(screen, save_path)
+
+    if not wait:
+        pygame.quit()
+        return
 
     running = True
     while running:

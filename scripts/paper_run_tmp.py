@@ -33,6 +33,7 @@ from library.data_io import (
     uploading_directional_data,
     save_vis_data,
     save_err_data,
+    get_anchor_labels,
 )
 from library.initialization import generate_CHEN_initial_positions
 from library.physics import main_physics_simulation
@@ -128,7 +129,7 @@ if __name__ == "__main__":
     args = _parse_args()
     run_one_round(
         refer_pos=list(DEFAULT_REFER_POS),
-        fixed_point_labels=["鄯善", "都護治/烏壘"],
+        fixed_point_labels=get_anchor_labels(),
         seed=args.seed,
         plot_simulation=args.plot,
         compare_models=args.compare_models,
