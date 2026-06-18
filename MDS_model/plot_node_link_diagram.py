@@ -148,6 +148,7 @@ def draw_node_link_pygame(
     caption: str = "節點連結圖（UTF-8）",
     interactive: bool = True,   # 預設關閉所有互動；不使用任何鍵盤快捷鍵
     save_path: Optional[str] = None,  # 若給路徑，會把畫面另存 PNG
+    wait: bool = True,
 ) -> None:
     """
     以 Pygame 繪製節點連結圖（支援中文標籤、UTF-8）。
@@ -262,6 +263,10 @@ def draw_node_link_pygame(
     # 若指定存檔，就把目前畫面存成 PNG
     if save_path:
         pygame.image.save(screen, save_path)
+
+    if not wait:
+        pygame.quit()
+        return
 
     # event loop：不使用任何鍵盤快捷鍵；interactive=False 時只處理關閉視窗
     running = True

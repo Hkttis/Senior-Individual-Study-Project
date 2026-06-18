@@ -34,7 +34,13 @@ def get_test_site_labels():
     return [row["name"] for row in load_site_points() if row["use_role"] == "test"]
 
 
-def get_anchor_align_label():
+def get_default_frame_anchor_label():
+    """Return the site used as the default projected-coordinate frame origin.
+
+    Historical data used a separate use_role=anchor_align row. The current
+    HPO setup uses three use_role=anchor rows and no separate anchor_align, so
+    the first anchor is used as the default frame anchor.
+    """
     labels = [row["name"] for row in load_site_points() if row["use_role"] == "anchor_align"]
     if len(labels) == 1:
         return labels[0]
@@ -44,6 +50,10 @@ def get_anchor_align_label():
     if not anchors:
         raise ValueError(f"Expected at least one anchor in {FILE_PATHS['ground_truth_path']}")
     return anchors[0]
+
+
+def get_anchor_align_label():
+    return get_default_frame_anchor_label()
 
 # data input
 def read_CHEN_csvfile() :

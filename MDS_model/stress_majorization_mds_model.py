@@ -42,7 +42,7 @@ def non_weight_graph_distance_matrix(graph,dni) :
     dismatrix = np.zeros((n,n))
     for i in range(n) :
         for row in graph[i] :
-            dismatrix[i][dni[row[1]]] = int(row[3])
+            dismatrix[i][dni[row[1]]] = int(row[-1])
     return nwgraph,dismatrix
 def calculate_weight_LW_dm (nwgraph,dismatrix):
     n = len(nwgraph)

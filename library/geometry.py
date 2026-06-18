@@ -4,6 +4,46 @@ from math import *
 from pyproj import Geod, CRS, Transformer
 from library.config import km2pix, km2Li, FILE_PATHS
 
+def get_lcc_bounds():
+    lons = []
+    lats = []
+    with open(FILE_PATHS["ground_truth_path"], newline="", encoding="utf-8-sig") as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            lon_text = (row.get("lon") or "").strip()
+            lat_text = (row.get("lat") or "").strip()
+            if not lon_text and not lat_text:
+                continue
+            if not lon_text or not lat_text:
+                raise ValueError(f"Missing lon/lat in {FILE_PATHS['ground_truth_path']}: {row}")
+            lon = float(lon_text)
+            lat = float(lat_text)
+            if lon == 0 and lat == 0:
+                continue
+            lons.append(lon)
+            lats.append(lat)
+    if not lons or not lats:
+        raise ValueError(f"No valid lon/lat rows found in {FILE_PATHS['ground_truth_path']}")
+    return min(lons), max(lons), min(lats), max(lats)
+
+
+def get_lcc_parameters():
+    lon_min, lon_max, lat_min, lat_max = get_lcc_bounds()
+    lat_range = lat_max - lat_min
+    lat1 = lat_min + lat_range / 6
+    lat2 = lat_max - lat_range / 6
+    lon0 = (lon_min + lon_max) / 2
+    return lat1, lat2, lon0
+
+
+def _build_lcc_crs():
+    lat1, lat2, lon0 = get_lcc_parameters()
+    return CRS.from_proj4(
+        f"+proj=lcc +lat_1={lat1} +lat_2={lat2} "
+        f"+lat_0={lat1} +lon_0={lon0} +x_0=0 +y_0=0 "
+        "+ellps=WGS84 +units=m"
+    )
+
 
 def _default_anchor_align_label():
     with open(FILE_PATHS["ground_truth_path"], newline="", encoding="utf-8-sig") as csvfile:
@@ -37,13 +77,9 @@ def shift(pos_matrix,scale,center_pos) : # Shift the average of points to the ce
         pair[1] = float(( pair[1] - sumy ) / scale + center_pos[1])
     return pos_matrix
 
-def lcc_transformation(dni, ground_truth_positions):
+def _unused_legacy_lcc_transformation(dni, ground_truth_positions):
      # use Lambert Conformal Conic to transform ground_truth to shan_shan (0,0) in xy plane
-    lon_min, lon_max = 73.24516481, 92.74103523
-    lat_min, lat_max = 37.12265816, 44.2843368
-    lat1 = lat_min
-    lat2 = lat_max
-    lon0 = (lon_min + lon_max) / 2
+    lat1, lat2, lon0 = get_lcc_parameters()
     # 建立 LCC 投影 CRS（單位：公尺）
     crs_lcc = CRS.from_proj4(
         f"+proj=lcc +lat_1={lat1} +lat_2={lat2} "
@@ -86,17 +122,7 @@ def lcc_transformation_with_anchor(dni, ground_truth_positions, anchor_label=Non
     if anchor_label not in dni:
         raise KeyError(f"anchor_label {anchor_label!r} not found in dni")
 
-    lon_min, lon_max = 73.24516481, 92.74103523
-    lat_min, lat_max = 37.12265816, 44.2843368
-    lat1 = lat_min
-    lat2 = lat_max
-    lon0 = (lon_min + lon_max) / 2
-
-    crs_lcc = CRS.from_proj4(
-        f"+proj=lcc +lat_1={lat1} +lat_2={lat2} "
-        f"+lat_0={lat1} +lon_0={lon0} +x_0=0 +y_0=0 "
-        "+ellps=WGS84 +units=m"
-    )
+    crs_lcc = _build_lcc_crs()
     transformer = Transformer.from_crs("EPSG:4326", crs_lcc, always_xy=True)
 
     lcc_xy_m = []
@@ -129,18 +155,8 @@ def lcc_transformation(dni, ground_truth_positions):
 
 def inverse_lcc_transformation(lcc_xy_km, wgs_align_pos):
     # Define projection parameters again (must be identical to the original)
-    lon_min, lon_max = 73.24516481, 92.74103523
-    lat_min, lat_max = 37.12265816, 44.2843368
-    lat1 = lat_min
-    lat2 = lat_max
-    lon0 = (lon_min + lon_max) / 2
-
     # Rebuild CRS
-    crs_lcc = CRS.from_proj4(
-        f"+proj=lcc +lat_1={lat1} +lat_2={lat2} "
-        f"+lat_0={lat1} +lon_0={lon0} +x_0=0 +y_0=0 "
-        "+ellps=WGS84 +units=m"
-    )
+    crs_lcc = _build_lcc_crs()
 
     # Create inverse transformer: LCC (projected meters) -> WGS84 (lon/lat)
     transformer = Transformer.from_crs(crs_lcc, "EPSG:4326", always_xy=True)

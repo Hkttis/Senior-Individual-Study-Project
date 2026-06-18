@@ -251,8 +251,8 @@ def directed_MDS(c_data,data,graph,vertice,dni,edges) : # c_data is from data_pr
     dis =  numpy.zeros((n,n))
     for ver in graph :
         for row in ver :
-            dis[dni[row[0]]][dni[row[1]]] = int(row[3])
-            dis[dni[row[1]]][dni[row[0]]] = int(row[3])
+            dis[dni[row[0]]][dni[row[1]]] = int(row[-1])
+            dis[dni[row[1]]][dni[row[0]]] = int(row[-1])
     # n is number of all nodes, s is number of all distance edges
     # m is number of nodes with directional edges (E'), t is the number of directional edges
     weight,LW,veight,LV,JW,JV = compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,in_dis_flag,in_direct_flag,fixed_points_flag)
