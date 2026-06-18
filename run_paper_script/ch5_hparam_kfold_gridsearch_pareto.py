@@ -23,6 +23,9 @@ python -m run_paper_script.paper_run ch5-hparam-kfold --seeds 0 --alpha-min -1 -
 
 Larger run example:
 python -m run_paper_script.paper_run ch5-hparam-kfold --seeds 0,1,2 --alpha-min -1 --alpha-max 2 --alpha-step 0.5 --beta-min -1 --beta-max 2 --beta-step 0.5 --outdir outputs/ch5_hparam_anchor_loo_grid_full
+
+Export LOO fold review plots after HPO:
+python -m run_paper_script.paper_run ch5-hparam-kfold --seeds 0 --alpha-min 0 --alpha-max 0 --alpha-step 1 --beta-min 0 --beta-max 0 --beta-step 1 --outdir outputs/ch5_hparam_anchor_loo_smoke --export-loo-review
 """
 
 from __future__ import annotations
@@ -56,7 +59,7 @@ from library.data_io import (
     uploading_directional_data,
     uploading_ground_truth,
 )
-from library.geometry import lcc_transformation_with_anchor
+from library.geometry import get_lcc_bounds, get_lcc_parameters, lcc_transformation_with_anchor
 from library.initialization import generate_CHEN_initial_positions
 from library.metrics import calculate_kruskals_stress, direction_violation_rate
 from library.physics import main_physics_simulation
@@ -182,7 +185,16 @@ def _rmse_labels_km(
     pred_km = px_list_to_km_list(pos_y_up_sim, tuple(refer_pos_sim), km2pix)
     gt_lonlat_full = _build_gt_lonlat_full(dni, gt_labels, gt_lonlat)
     gt_km = lcc_transformation_with_anchor(dni, gt_lonlat_full, anchor_label=anchor_label_for_frame)
+    return _euclidean_rmse_km(pred_km=pred_km, gt_km=gt_km, eval_labels=eval_labels, dni=dni)
 
+
+def _euclidean_rmse_km(
+    *,
+    pred_km: Sequence[Sequence[float]],
+    gt_km: Sequence[Sequence[float]],
+    eval_labels: Sequence[str],
+    dni: Dict[str, int],
+) -> float:
     se: List[float] = []
     for label in eval_labels:
         idx = dni[label]
@@ -363,6 +375,7 @@ def _run_final_selected_model(
     base_repulsion_strength: float,
     refer_pos_sim: Sequence[float],
     outdir: Path,
+    selection_rule: str = "pareto_min_RMSE_anchor_LOO_mean_km",
 ) -> None:
     alpha = float(selected["alpha"])
     beta = float(selected["beta"])
@@ -394,7 +407,7 @@ def _run_final_selected_model(
             refer_pos_sim=refer_pos_sim,
         )
         row = {
-            "selection_rule": "pareto_min_RMSE_anchor_LOO_mean_km",
+            "selection_rule": selection_rule,
             "alpha": alpha,
             "beta": beta,
             "seed": int(seed),
@@ -412,7 +425,7 @@ def _run_final_selected_model(
     df_final = pd.DataFrame(final_rows)
     df_final.to_csv(outdir / "selected_final_runs_by_seed.csv", index=False, encoding="utf-8-sig")
     summary = {
-        "selection_rule": "pareto_min_RMSE_anchor_LOO_mean_km",
+        "selection_rule": selection_rule,
         "alpha": alpha,
         "beta": beta,
         "n_seeds": int(len(seeds)),
@@ -453,6 +466,8 @@ def run_anchor_loo_gridsearch_pareto(
     base_repulsion_strength: float,
     refer_pos_sim: Sequence[float],
     outdir: str | Path | None,
+    export_loo_review: bool = False,
+    overwrite: bool = False,
 ) -> Dict[str, object]:
     _graph, vertice, dni, _edges, _data = load_ini_data_from_csv(FILE_PATHS)
     gt_lonlat_all = uploading_ground_truth(vertice, dni)
@@ -461,6 +476,11 @@ def run_anchor_loo_gridsearch_pareto(
     alphas, betas = _make_alpha_beta_grid(alpha_min, alpha_max, alpha_step, beta_min, beta_max, beta_step)
 
     outdir_path = Path(outdir) if outdir else (Path(OUTPUT_DIR) / "ch5_hparam_anchor_loo_gridsearch")
+    if outdir_path.exists() and any(outdir_path.iterdir()) and not overwrite:
+        raise FileExistsError(
+            f"HPO outdir already exists and is not empty: {outdir_path}. "
+            "Choose a new --outdir or pass --overwrite intentionally."
+        )
     outdir_path.mkdir(parents=True, exist_ok=True)
 
     run_rows: List[dict] = []
@@ -536,6 +556,7 @@ def run_anchor_loo_gridsearch_pareto(
                     )
 
                 df_seed = pd.DataFrame(seed_metrics)
+                n_failed_seeds = int(df_seed["RMSE_km"].isna().sum())
                 fold_summary = {
                     "alpha": float(alpha),
                     "beta": float(beta),
@@ -547,6 +568,7 @@ def run_anchor_loo_gridsearch_pareto(
                     "train_anchor_label": fold.train_anchor_label,
                     "heldout_label": fold.heldout_label,
                     "n_seeds": int(len(seeds)),
+                    "n_failed_seeds": n_failed_seeds,
                     "E_distance_stress_mean": float(df_seed["E_distance_stress"].mean()),
                     "E_distance_stress_std": float(df_seed["E_distance_stress"].std(ddof=0)),
                     "E_direction_vr_mean": float(df_seed["E_direction_vr"].mean()),
@@ -570,6 +592,7 @@ def run_anchor_loo_gridsearch_pareto(
                     "repulsion_strength": repulsion,
                     "n_folds": int(len(combo_fold_metrics)),
                     "n_seeds_per_fold": int(len(seeds)),
+                    "n_failed_runs": int(df_folds_for_combo["n_failed_seeds"].sum()),
                     "E_distance_stress_mean": float(df_folds_for_combo["E_distance_stress_mean"].mean()),
                     "E_distance_stress_std": float(df_folds_for_combo["E_distance_stress_mean"].std(ddof=0)),
                     "E_direction_vr_mean": float(df_folds_for_combo["E_direction_vr_mean"].mean()),
@@ -598,6 +621,12 @@ def run_anchor_loo_gridsearch_pareto(
         "final_rmse_labels": "use_role == test",
         "anchor_labels": list(anchor_labels),
         "test_labels": list(test_labels),
+        "lcc_bounds": dict(
+            zip(["lon_min", "lon_max", "lat_min", "lat_max"], map(float, get_lcc_bounds()))
+        ),
+        "lcc_parameters": dict(zip(["lat_1", "lat_2", "lon_0"], map(float, get_lcc_parameters()))),
+        "lcc_standard_parallel_rule": "lat_1=lat_min+(lat_max-lat_min)/6; lat_2=lat_max-(lat_max-lat_min)/6",
+        "lcc_bounds_source": FILE_PATHS["ground_truth_path"],
         "seeds": list(map(int, seeds)),
         "alpha_range": [alpha_min, alpha_max, alpha_step],
         "beta_range": [beta_min, beta_max, beta_step],
@@ -661,6 +690,21 @@ def run_anchor_loo_gridsearch_pareto(
     print(f"Pareto solutions: {int(df_grid['is_pareto'].sum())}/{len(df_grid)}")
     print(f"Saved to: {outdir_path}")
 
+    if export_loo_review:
+        from scripts.export_hpo_loo_review import export_hpo_loo_review
+
+        export_hpo_loo_review(
+            hpo_outdir=outdir_path,
+            alpha=float(selected["alpha"]),
+            beta=float(selected["beta"]),
+            seed=int(seeds[0]),
+            w_dis=w_dis,
+            base_spring_stiffness=base_spring_stiffness,
+            base_directional_force=base_directional_force,
+            base_repulsion_strength=base_repulsion_strength,
+            refer_pos_sim=refer_pos_sim,
+        )
+
     return {
         "df_runs": df_runs,
         "df_folds": df_folds,
@@ -686,6 +730,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--base-dir", type=float, default=DIRECTIONAL_FORCE_MAGNITUDE_BASE)
     parser.add_argument("--base-rep", type=float, default=REPULSION_STRENGTH_BASE)
     parser.add_argument("--outdir", type=str, default="")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow writing into an existing non-empty HPO outdir.",
+    )
+    parser.add_argument(
+        "--export-loo-review",
+        action="store_true",
+        help="Export three LOO fold review CSV/PNG files after selecting HPO parameters.",
+    )
     return parser.parse_args()
 
 
@@ -706,6 +760,8 @@ def main() -> None:
         base_repulsion_strength=args.base_rep,
         refer_pos_sim=DEFAULT_REFER_POS_SIM,
         outdir=args.outdir,
+        export_loo_review=args.export_loo_review,
+        overwrite=args.overwrite,
     )
 
 
