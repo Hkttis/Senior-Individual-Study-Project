@@ -18,8 +18,8 @@ def download_and_upload_allpos_in_runs():
     fixed_points_lonlat = [ tuple(gt[dni[cout]]) for cout in fixed_point_labels]
     
     res = multi_measurement_benchmark(n_runs = 100, refer_pos=(600, 500), fixed_point_labels = fixed_point_labels, fixed_point_lonlat = fixed_points_lonlat)
-    save_all_pos_histories_px_csv(res["all_pos_history_px"]["StressMajorization"],
-                              res["all_pos_history_px"]["DirectedMDS"],
+    save_all_pos_histories_px_csv(res["all_pos_history_px"]["SMACOF"],
+                              res["all_pos_history_px"]["DC-SMACOF"],
                               res["all_pos_history_px"]["PhysicsSim"],
                               vertice = vertice)
     all_pos_hist_sm_px, all_pos_hist_dm_px, all_pos_hist_ph_px = load_all_pos_histories_px_csv()
@@ -35,8 +35,8 @@ def download_and_upload_allpos_in_runs():
     
     # Use this for all three asserts:
     assert as_pylists(res["all_pos_history_px"]["PhysicsSim"]) == as_pylists(all_pos_hist_ph_px)
-    assert as_pylists(res["all_pos_history_px"]["DirectedMDS"]) == as_pylists(all_pos_hist_dm_px)
-    assert as_pylists(res["all_pos_history_px"]["StressMajorization"]) == as_pylists(all_pos_hist_sm_px)    
+    assert as_pylists(res["all_pos_history_px"]["DC-SMACOF"]) == as_pylists(all_pos_hist_dm_px)
+    assert as_pylists(res["all_pos_history_px"]["SMACOF"]) == as_pylists(all_pos_hist_sm_px)
     
     return all_pos_hist_sm_px, all_pos_hist_dm_px, all_pos_hist_ph_px
 

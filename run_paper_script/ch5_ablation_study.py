@@ -8,7 +8,7 @@ Variants:
   - PhysicsSim-NoDir
   - PhysicsSim-DistOnly
   - SMACOF
-  - DC-SMACOF / DirectedMDS
+  - DC-SMACOF
 
 Outputs include metrics and the final model positions for each variant/seed.
 The script also exports summary statistics and paired comparisons.
@@ -80,13 +80,20 @@ METRIC_COLS = [
     "median_pairwise_distance_km",
 ]
 
+PAIRED_METRIC_COLS = [
+    "E_distance_stress",
+    "E_direction_vr",
+    "E_direction_mae",
+    "RMSE_test_km",
+]
+
 PAIRED_COMPARISONS = [
     ("PhysicsSim-Full", "PhysicsSim-NoRep", "repulsion_given_direction"),
     ("PhysicsSim-Full", "PhysicsSim-NoDir", "direction_given_repulsion"),
     ("PhysicsSim-NoRep", "PhysicsSim-DistOnly", "direction_without_repulsion"),
     ("PhysicsSim-NoDir", "PhysicsSim-DistOnly", "repulsion_without_direction"),
     ("PhysicsSim-DistOnly", "SMACOF", "dist_only_vs_smacof"),
-    ("PhysicsSim-NoRep", "DirectedMDS", "direction_info_matched"),
+    ("PhysicsSim-NoRep", "DC-SMACOF", "direction_info_matched"),
 ]
 
 
@@ -113,6 +120,60 @@ def _load_selected_hpo_params(hpo_outdir: str | Path) -> tuple[float, float]:
         )
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     return float(summary["alpha"]), float(summary["beta"])
+
+
+def _dc_smacof_weights_from_alpha(alpha: float, w_weight: float = 1.0) -> tuple[float, float]:
+    distance_weight = float(w_weight)
+    direction_weight = float(distance_weight * math.pow(10.0, float(alpha)))
+    return distance_weight, direction_weight
+
+
+def _load_selected_dc_smacof_params(
+    dc_hpo_outdir: str | Path | None = None,
+    dc_alpha: float | None = None,
+) -> dict:
+    if dc_alpha is not None:
+        w_weight_value, v_weight_value = _dc_smacof_weights_from_alpha(float(dc_alpha))
+        return {
+            "source": "manual_cli_alpha",
+            "hpo_outdir": str(dc_hpo_outdir) if dc_hpo_outdir else "",
+            "alpha": float(dc_alpha),
+            "w_weight": w_weight_value,
+            "v_weight": v_weight_value,
+        }
+
+    if not dc_hpo_outdir:
+        default_alpha = -0.5
+        w_weight_value, v_weight_value = _dc_smacof_weights_from_alpha(default_alpha)
+        return {
+            "source": "default_selected_alpha",
+            "hpo_outdir": "",
+            "alpha": default_alpha,
+            "w_weight": w_weight_value,
+            "v_weight": v_weight_value,
+        }
+
+    dc_hpo_path = Path(dc_hpo_outdir)
+    candidate_csv = dc_hpo_path / "dc_smacof_selected_candidate.csv"
+    if not candidate_csv.exists():
+        raise FileNotFoundError(
+            f"DC-SMACOF HPO folder has no selected candidate: {candidate_csv}. "
+            "If the Pareto front was small, choose one manually with --dc-alpha."
+        )
+    df = pd.read_csv(candidate_csv)
+    if df.empty:
+        raise ValueError(f"dc_smacof_selected_candidate.csv is empty: {candidate_csv}")
+    row = df.iloc[0]
+    alpha = float(row["alpha"])
+    w_weight_value = float(row.get("w_weight", 1.0))
+    v_weight_value = float(row.get("v_weight", _dc_smacof_weights_from_alpha(alpha, w_weight_value)[1]))
+    return {
+        "source": "dc_hpo_selected_candidate",
+        "hpo_outdir": str(dc_hpo_path),
+        "alpha": alpha,
+        "w_weight": w_weight_value,
+        "v_weight": v_weight_value,
+    }
 
 
 def _variant_forces(
@@ -313,7 +374,7 @@ def _build_paired_comparisons(df_runs: pd.DataFrame) -> pd.DataFrame:
         common_seeds = sorted(set(left_df.index).intersection(right_df.index))
         if not common_seeds:
             continue
-        for metric in METRIC_COLS:
+        for metric in PAIRED_METRIC_COLS:
             diffs = np.asarray(
                 [float(left_df.loc[seed, metric]) - float(right_df.loc[seed, metric]) for seed in common_seeds],
                 dtype=float,
@@ -410,17 +471,24 @@ def _run_directed_mds_baseline(
     anchor_labels: Sequence[str],
     anchor_lonlat: Sequence[Tuple[float, float]],
     refer_pos_sim: Sequence[float],
+    dc_w_weight: float | None = None,
+    dc_v_weight: float | None = None,
 ) -> np.ndarray:
     np.random.seed(seed)
-    pos_history_li = run_directed_MDS(vis=False)
+    pos_history_li = run_directed_MDS(
+        vis=False,
+        w_weight_value=dc_w_weight,
+        v_weight_value=dc_v_weight,
+    )
     pos_li = pos_history_li[-1]
-    pos_px = alignment_and_scaling(pos_li, vertice, dni, refer_pos_sim, y_down=False)
-    pos_px = procrustes_align_by_fixed_points(
-        deepcopy(pos_px),
-        list(anchor_labels),
-        list(anchor_lonlat),
+    # DC-SMACOF already uses directional information, so do not apply
+    # Procrustes rotation/reflection by anchors here.
+    pos_px = alignment_and_scaling(
+        pos_li,
+        vertice,
         dni,
-        refer_pos=refer_pos_sim,
+        refer_pos_sim,
+        y_down=False,
         anchor_label=anchor_labels[0],
     )
     return np.asarray(pos_px, dtype=float)
@@ -437,6 +505,8 @@ def run_ablation_study(
     base_directional_force: float = DIRECTIONAL_FORCE_MAGNITUDE_BASE,
     base_repulsion_strength: float = REPULSION_STRENGTH_BASE,
     refer_pos_sim: Sequence[float] = DEFAULT_REFER_POS_SIM,
+    dc_hpo_outdir: str | Path | None = None,
+    dc_alpha: float | None = None,
     overwrite: bool = False,
 ) -> dict:
     outdir_path = Path(outdir) if outdir else Path(OUTPUT_DIR) / "ch5_ablation_study"
@@ -447,6 +517,7 @@ def run_ablation_study(
         )
     outdir_path.mkdir(parents=True, exist_ok=True)
     alpha, beta = _load_selected_hpo_params(hpo_outdir)
+    dc_params = _load_selected_dc_smacof_params(dc_hpo_outdir, dc_alpha)
 
     graph, vertice, dni, edges, data_li = load_ini_data_from_csv(FILE_PATHS)
     data_sim = data_Li2sim(data_li)
@@ -520,7 +591,7 @@ def run_ablation_study(
         if include_baselines:
             for model, runner in [
                 ("SMACOF", _run_smacof_baseline),
-                ("DirectedMDS", _run_directed_mds_baseline),
+                ("DC-SMACOF", _run_directed_mds_baseline),
             ]:
                 try:
                     if model == "SMACOF":
@@ -542,6 +613,8 @@ def run_ablation_study(
                             anchor_labels=anchor_labels,
                             anchor_lonlat=anchor_lonlat,
                             refer_pos_sim=refer_pos_sim,
+                            dc_w_weight=dc_params["w_weight"],
+                            dc_v_weight=dc_params["v_weight"],
                         )
                     metrics, positions = _evaluate_positions(
                         model=model,
@@ -579,6 +652,7 @@ def run_ablation_study(
         "hpo_outdir": str(hpo_outdir),
         "alpha": alpha,
         "beta": beta,
+        "dc_smacof_hpo": dc_params,
         "seeds": list(map(int, seeds)),
         "anchor_labels": list(anchor_labels),
         "test_labels": list(test_labels),
@@ -589,6 +663,11 @@ def run_ablation_study(
         "lcc_standard_parallel_rule": "lat_1=lat_min+(lat_max-lat_min)/6; lat_2=lat_max-(lat_max-lat_min)/6",
         "lcc_bounds_source": FILE_PATHS["ground_truth_path"],
         "include_baselines": bool(include_baselines),
+        "w_dis": float(w_dis),
+        "base_spring_stiffness": float(base_spring_stiffness),
+        "base_directional_force": float(base_directional_force),
+        "base_repulsion_strength": float(base_repulsion_strength),
+        "refer_pos_sim": list(map(float, refer_pos_sim)),
         "physics_variants": PHYSICS_VARIANTS,
         "outputs": {
             "runs": "ablation_runs_by_seed.csv",
@@ -597,6 +676,11 @@ def run_ablation_study(
             "final_positions": "ablation_final_positions_y_up_sim.csv",
         },
         "metrics": METRIC_COLS,
+        "paired_metrics": PAIRED_METRIC_COLS,
+        "summary_only_diagnostic_metrics": [
+            "min_pairwise_distance_km",
+            "median_pairwise_distance_km",
+        ],
         "paired_comparisons": [
             {"left_variant": left, "right_variant": right, "comparison": comparison}
             for left, right, comparison in PAIRED_COMPARISONS
@@ -625,6 +709,17 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--seeds", default="0", help="Comma-separated seeds, e.g. 0,1,2")
     parser.add_argument("--outdir", default="", help="Output directory.")
     parser.add_argument("--no-baselines", action="store_true", help="Run only PhysicsSim variants.")
+    parser.add_argument(
+        "--dc-hpo-outdir",
+        default="",
+        help="DC-SMACOF HPO output directory with dc_smacof_selected_candidate.csv.",
+    )
+    parser.add_argument(
+        "--dc-alpha",
+        type=float,
+        default=None,
+        help="Manual DC-SMACOF alpha=log10(v_weight/w_weight), used when no selected DC-HPO candidate exists.",
+    )
     parser.add_argument("--overwrite", action="store_true", help="Allow writing into an existing non-empty outdir.")
     parser.add_argument("--w-dis", type=float, default=1.0)
     parser.add_argument("--base-spring", type=float, default=SPRING_STIFFNESS_BASE)
@@ -645,6 +740,8 @@ def main() -> None:
         base_directional_force=args.base_dir,
         base_repulsion_strength=args.base_rep,
         refer_pos_sim=DEFAULT_REFER_POS_SIM,
+        dc_hpo_outdir=args.dc_hpo_outdir or None,
+        dc_alpha=args.dc_alpha,
         overwrite=args.overwrite,
     )
 

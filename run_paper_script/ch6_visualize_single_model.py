@@ -14,8 +14,8 @@ This script produces the *single-model* visualizations used in the paper:
 Supported models
 ----------------
   - PhysicsSim            : run the physics simulation once (seeded)
-  - StressMajorization    : run baseline (vis=False) and postprocess
-  - DirectedMDS           : run baseline (vis=False) and postprocess
+  - SMACOF                : run baseline (vis=False) and postprocess
+  - DC-SMACOF             : run baseline (vis=False) and postprocess
 
 Usage
 -----

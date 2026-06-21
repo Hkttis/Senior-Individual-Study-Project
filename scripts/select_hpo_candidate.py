@@ -2,7 +2,7 @@
 
 Usage
 -----
-python -m scripts.select_hpo_candidate --source-hpo-outdir outputs/ch5_hparam_anchor_loo_grid_main_36x10 --alpha 1.0 --beta -1.5 --seeds 0,1,2,3,4,5,6,7,8,9 --outdir outputs/ch5_hparam_anchor_loo_grid_main_36x10_manual_alpha_1_beta_-1.5
+python -m scripts.select_hpo_candidate --source-hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10 --alpha 1.0 --beta -0.5 --seeds 0,1,2,3,4,5,6,7,8,9 --outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_manual_alpha_1_beta_-0.5
 """
 
 from __future__ import annotations

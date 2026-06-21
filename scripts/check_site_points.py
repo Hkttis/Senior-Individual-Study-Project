@@ -25,7 +25,7 @@ from library.data_io import (
 
 
 EXPECTED_REQUIRED_COLUMNS = {"lon", "lat", "use_role"}
-EXPECTED_ROLES = {"anchor", "test"}
+EXPECTED_ROLES = {"anchor", "anchor_align", "test"}
 
 
 def _distance_labels() -> list[str]:
@@ -99,6 +99,10 @@ def main() -> int:
 
     anchors = get_anchor_labels()
     test_sites = get_test_site_labels()
+    anchor_aligns = [row["model_name"] for row in rows if row["use_role"] == "anchor_align"]
+    frame_anchor_candidates = anchors + anchor_aligns
+    if not frame_anchor_candidates:
+        errors.append("expected at least one use_role=anchor or use_role=anchor_align row for frame alignment")
     if len(anchors) != 3:
         errors.append(f"expected exactly 3 use_role=anchor rows for LOO HPO, got {len(anchors)}: {anchors}")
     if len(test_sites) != 8:
@@ -128,6 +132,7 @@ def main() -> int:
     print("[OK] site points check passed")
     print(f"[INFO] rows read: {len(rows)}")
     print(f"[INFO] anchors: {anchors}")
+    print(f"[INFO] anchor_align: {anchor_aligns}")
     print(f"[INFO] test sites: {test_sites}")
     print(f"[INFO] names matching distance data: {len(matched_names)}")
     print(f"[INFO] names not in distance data: {len(unknown_names)}")

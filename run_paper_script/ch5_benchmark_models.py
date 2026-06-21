@@ -3,8 +3,8 @@
 Chapter 5 — Repeated-measurement benchmark.
 
 Runs `library.model_cmp.multi_measurement_benchmark` to compare:
-  - StressMajorization
-  - DirectedMDS
+  - SMACOF
+  - DC-SMACOF
   - PhysicsSim
 
 It prints summary statistics (mean/SD/SE/95% CI) and optionally saves
@@ -88,8 +88,8 @@ def main() -> None:
 
     if args.save_histories:
         save_all_pos_histories_px_csv(
-            res["all_pos_history_px"]["StressMajorization"],
-            res["all_pos_history_px"]["DirectedMDS"],
+            res["all_pos_history_px"]["SMACOF"],
+            res["all_pos_history_px"]["DC-SMACOF"],
             res["all_pos_history_px"]["PhysicsSim"],
             vertice=vertice,
         )

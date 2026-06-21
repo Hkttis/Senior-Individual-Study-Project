@@ -4,8 +4,8 @@ Chapter 5 — Baseline comparison experiment.
 
 Runs:
   1) Physics simulation (our method)
-  2) DirectedMDS baseline
-  3) StressMajorization baseline
+  2) DC-SMACOF baseline
+  3) SMACOF baseline
 
 Then visualizes convergence (stress + RMSE bands) using:
   library.visualization.plot_three_model_convergence_pygame_pixelaware
@@ -90,7 +90,7 @@ def main() -> None:
         spring_stiffness=SPRING_STIFFNESS_BASE,
         repulsion_strength=REPULSION_STRENGTH_BASE,
         directional_force_magnitude=DIRECTIONAL_FORCE_MAGNITUDE_BASE,
-        plot=True,
+        plot=False,
     )
 
     # 2) Baseline histories (Li units)

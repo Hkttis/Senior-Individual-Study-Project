@@ -361,6 +361,46 @@ def _plot_pareto_2d_projections(df_grid: pd.DataFrame, pareto_mask: np.ndarray, 
     plt.close(fig)
 
 
+def _select_one_se_balanced_candidate(
+    df_pareto: pd.DataFrame,
+    objective_cols: Sequence[str],
+) -> tuple[pd.Series, dict]:
+    if df_pareto.empty:
+        raise ValueError("No Pareto solutions found.")
+
+    min_rmse_idx = df_pareto["RMSE_anchor_LOO_mean_km"].idxmin()
+    min_rmse_row = df_pareto.loc[min_rmse_idx]
+    n_folds = max(int(min_rmse_row.get("n_folds", 1)), 1)
+    min_rmse = float(min_rmse_row["RMSE_anchor_LOO_mean_km"])
+    min_se = float(min_rmse_row["RMSE_anchor_LOO_std_km"]) / math.sqrt(n_folds)
+    threshold = min_rmse + min_se
+
+    candidates = df_pareto[df_pareto["RMSE_anchor_LOO_mean_km"] <= threshold].copy()
+    if candidates.empty:
+        candidates = df_pareto.loc[[min_rmse_idx]].copy()
+
+    mins = df_pareto[list(objective_cols)].min()
+    ranges = (df_pareto[list(objective_cols)].max() - mins).replace(0, 1.0)
+    standardized = (candidates[list(objective_cols)] - mins) / ranges
+    candidates["one_se_balanced_score"] = np.sqrt((standardized**2).sum(axis=1))
+    selected_idx = candidates["one_se_balanced_score"].idxmin()
+    selected = candidates.loc[selected_idx]
+    selection_meta = {
+        "selection_rule": "pareto_one_se_balanced",
+        "one_se_reference_alpha": float(min_rmse_row["alpha"]),
+        "one_se_reference_beta": float(min_rmse_row["beta"]),
+        "one_se_reference_rmse_anchor_loo_mean_km": min_rmse,
+        "one_se_reference_rmse_anchor_loo_std_km": float(min_rmse_row["RMSE_anchor_LOO_std_km"]),
+        "one_se_reference_n_folds": n_folds,
+        "one_se_min_se_km": min_se,
+        "one_se_threshold_km": threshold,
+        "one_se_candidate_count": int(len(candidates)),
+        "balanced_objectives": list(objective_cols),
+        "balanced_score": float(selected["one_se_balanced_score"]),
+    }
+    return selected, selection_meta
+
+
 def _run_final_selected_model(
     *,
     selected: pd.Series,
@@ -375,7 +415,8 @@ def _run_final_selected_model(
     base_repulsion_strength: float,
     refer_pos_sim: Sequence[float],
     outdir: Path,
-    selection_rule: str = "pareto_min_RMSE_anchor_LOO_mean_km",
+    selection_rule: str = "pareto_one_se_balanced",
+    selection_meta: dict | None = None,
 ) -> None:
     alpha = float(selected["alpha"])
     beta = float(selected["beta"])
@@ -437,6 +478,8 @@ def _run_final_selected_model(
         "E_direction_vr_mean": float(df_final["E_direction_vr"].mean()),
         "best_seed_by_final_test_rmse": best_seed,
     }
+    if selection_meta:
+        summary.update(selection_meta)
     (outdir / "selected_final_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -618,6 +661,7 @@ def run_anchor_loo_gridsearch_pareto(
     cfg = {
         "validation": "three_anchor_leave_one_anchor_out",
         "objectives": objective_cols,
+        "default_selection_rule": "pareto_one_se_balanced",
         "final_rmse_labels": "use_role == test",
         "anchor_labels": list(anchor_labels),
         "test_labels": list(test_labels),
@@ -662,10 +706,7 @@ def run_anchor_loo_gridsearch_pareto(
     _plot_pareto_3d(df_grid, pareto_mask, outdir_path / "pareto_front_3d.png")
     _plot_pareto_2d_projections(df_grid, pareto_mask, outdir_path / "pareto_front_2d_projections.png")
 
-    if df_pareto.empty:
-        raise ValueError("No Pareto solutions found.")
-    selected_idx = df_pareto["RMSE_anchor_LOO_mean_km"].idxmin()
-    selected = df_grid.loc[selected_idx]
+    selected, selection_meta = _select_one_se_balanced_candidate(df_pareto, objective_cols)
     _run_final_selected_model(
         selected=selected,
         anchor_labels=anchor_labels,
@@ -679,13 +720,16 @@ def run_anchor_loo_gridsearch_pareto(
         base_repulsion_strength=base_repulsion_strength,
         refer_pos_sim=refer_pos_sim,
         outdir=outdir_path,
+        selection_rule=selection_meta["selection_rule"],
+        selection_meta=selection_meta,
     )
 
-    print("\n=== Selected Pareto solution by min RMSE_anchor_LOO_mean_km ===")
+    print("\n=== Default Pareto candidate by one-SE balanced rule ===")
     print(
         f"alpha={selected['alpha']}, beta={selected['beta']}, "
         f"RMSE_anchor_LOO={selected['RMSE_anchor_LOO_mean_km']:.4f}±{selected['RMSE_anchor_LOO_std_km']:.4f} km, "
-        f"stress={selected['E_distance_stress_mean']:.4f}, vr={selected['E_direction_vr_mean']:.4f}"
+        f"stress={selected['E_distance_stress_mean']:.4f}, vr={selected['E_direction_vr_mean']:.4f}, "
+        f"one_se_threshold={selection_meta['one_se_threshold_km']:.4f} km"
     )
     print(f"Pareto solutions: {int(df_grid['is_pareto'].sum())}/{len(df_grid)}")
     print(f"Saved to: {outdir_path}")
