@@ -928,7 +928,7 @@ def plot_three_model_convergence_pygame_pixelaware(
     '''
     # --- 顏色（沿用固定色） ---
     C_PH = (0, 102, 204)    # Physics: Blue
-    C_DM = (255, 140, 0)    # Directed-MDS: Orange
+    C_DM = (255, 140, 0)    # DC-SMACOF: Orange
     C_SM = (34, 139, 34)    # Stress-Majorization: Green
 
     # --- clear & title ---
@@ -987,7 +987,7 @@ def plot_three_model_convergence_pygame_pixelaware(
     # --- 簡易圖例 ---
     def legend(x, y):
         y += 20
-        items = [("PhysicSim (our method)", C_PH), ("DC-SMACOF", C_DM), ("SMACOF", C_SM)]
+        items = [("PhysicsSim (our method)", C_PH), ("DC-SMACOF", C_DM), ("SMACOF", C_SM)]
         dx = 0
         for label, col in items:
             if col == C_DM :
@@ -1032,8 +1032,8 @@ def plot_three_model_direction_convergence(
     bin_size_sm_mae=10,         # SMACOF MAE 分箱大小
     bin_size_dm_vr=10,          # DC-SMACOF VR 分箱大小
     bin_size_dm_mae=10,         # DC-SMACOF MAE 分箱大小
-    bin_size_ph_vr=10,          # PhysicSim VR 分箱大小
-    bin_size_ph_mae=10,         # PhysicSim MAE 分箱大小
+    bin_size_ph_vr=10,          # PhysicsSim VR 分箱大小
+    bin_size_ph_mae=10,         # PhysicsSim MAE 分箱大小
     band_alpha=38,
     pre_process=False,
     save_path=os.path.join(str(OUTPUT_DIR), "ThreeModels_VR_MAE.png"),
@@ -1273,7 +1273,7 @@ def plot_three_model_direction_convergence(
     # --- 圖例 ---
     def legend(x, y):
         y += 20
-        items = [("PhysicSim (our method)", C_PH), ("DC-SMACOF", C_DM), ("SMACOF", C_SM)]
+        items = [("PhysicsSim (our method)", C_PH), ("DC-SMACOF", C_DM), ("SMACOF", C_SM)]
         dx = 0
         for label, col in items:
             if col == C_DM:

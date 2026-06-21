@@ -17,24 +17,37 @@ from MDS_model.directed_mds_model import *
 from MDS_model.plot_node_link_diagram import *
 
 
+def _directional_data_to_dc_smacof_c_data(directional_data):
+    """Wrap verified direction rows in the legacy c_data shape used by DC-SMACOF."""
+    c_data = [[], [], [], []]
+    for row in directional_data:
+        if len(row) < 3:
+            raise ValueError(f"Directional row must have source, target, direction: {row!r}")
+        c_data[2].append([row[0], row[1], row[2]])
+    return c_data
 
-def run_directed_MDS( vis = True ):
-    datanum = ["C:\\Users\\hktti\Desktop\\project\\csv doc utf8\\GPT-4_史記_numerals_utf8.csv",
-    "C:\\Users\\hktti\Desktop\\project\\csv doc utf8\\GPT-4_漢書_numerals_utf8.csv",
-    "C:\\Users\\hktti\Desktop\\project\\csv doc utf8\\GPT-4_後漢書_numerals_utf8.csv"]
-    pre_data = read_csvfile(datanum)
-    c_data,disset = data_process(pre_data)
-    
+
+def run_directed_MDS( vis = True, w_weight_value = None, v_weight_value = None ):
+    c_data = _directional_data_to_dc_smacof_c_data(uploading_directional_data())
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
-    pos_matrix, stress_history, pos_history = directed_MDS(c_data,data,graph,vertice,dni,edges)
+    pos_matrix, stress_history, pos_history = directed_MDS(
+        c_data,
+        data,
+        graph,
+        vertice,
+        dni,
+        edges,
+        distance_weight=w_weight_value,
+        direction_weight=v_weight_value,
+    )
     
     if vis == True :
-        plot_stress_convergence_log(stress_history, file_name = "DirectedMDS_")
+        plot_stress_convergence_log(stress_history, file_name = "DC-SMACOF_")
         
         dir_data = uploading_directional_data()
         directional_data = [(row[0], row[1], row[2]) for row in dir_data]
         draw_node_link_pygame_dirarrow(
-            pos=flipping_y(pos_matrix),                 # directed_MDS 或 stress majorization 的座標輸出
+            pos=flipping_y(pos_matrix),                 # DC-SMACOF 或 SMACOF 的座標輸出
             vertice=vertice,
             edges=edges,
             directed=False,             # 若只想亮出羅盤箭頭，不把所有邊都變成有向
@@ -52,10 +65,10 @@ def run_directed_MDS( vis = True ):
         # directed_MDS should not apply procrustes analysis 
         pos_matrix = alignment_and_scaling(pos_matrix, vertice, dni, refer_pos=[600,500], y_down=False)
         pos_matrix = flipping_y(pos_matrix)
-        visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, zoom_area = None , file_name = "DirectedMDS_")
-        #visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, zoom_area = (200, 200, 800, 400) , file_name = "DirectedMDS_")
+        visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, zoom_area = None , file_name = "DC-SMACOF_")
+        #visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, zoom_area = (200, 200, 800, 400) , file_name = "DC-SMACOF_")
         anchor_align_label = get_anchor_align_label()
-        ground_truth_comparison(vertice,dni,data_Li2sim(data), uploading_ground_truth(vertice,dni),pos_matrix[dni[anchor_align_label]], deepcopy(pos_matrix), file_name = "DirectedMDS_")
+        ground_truth_comparison(vertice,dni,data_Li2sim(data), uploading_ground_truth(vertice,dni),pos_matrix[dni[anchor_align_label]], deepcopy(pos_matrix), file_name = "DC-SMACOF_")
         
     return pos_history
 
@@ -64,7 +77,7 @@ def run_stress_majorization( vis = True ):
     pos_matrix, stress_history, pos_history = stress_majorization(graph,dni,vertice,edges)
 
     if vis == True :
-        plot_stress_convergence_log(stress_history, file_name = "StressMj_")
+        plot_stress_convergence_log(stress_history, file_name = "SMACOF_")
         draw_node_link_pygame(flipping_y(pos_matrix), vertice, edges)
         animate_node_link_pygame( [flipping_y(pos) for pos in pos_history], vertice, edges)
         
@@ -83,9 +96,9 @@ def run_stress_majorization( vis = True ):
         
         pos_matrix = flipping_y(pos_matrix)
 
-        visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, file_name = "StressMj_")
+        visualize_error_map_official(deepcopy(pos_matrix), vertice, dni, data, wrong_directions_list, file_name = "SMACOF_")
         anchor_align_label = get_anchor_align_label()
-        ground_truth_comparison(vertice,dni,data_Li2sim(data), uploading_ground_truth(vertice,dni),pos_matrix[dni[anchor_align_label]], deepcopy(pos_matrix), file_name = "StressMj_")
+        ground_truth_comparison(vertice,dni,data_Li2sim(data), uploading_ground_truth(vertice,dni),pos_matrix[dni[anchor_align_label]], deepcopy(pos_matrix), file_name = "SMACOF_")
 
     return pos_history
 
@@ -202,7 +215,7 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
     all_pos_hist_ph_px = []
 
     for i in range(n_runs):
-        # ---------------- Stress Majorization ----------------
+        # ---------------- SMACOF ----------------
         pos_hist_sm_li = run_stress_majorization(vis=False)                  # history in Li units
         pos_hist_sm_px = _align_history_stress_mj(pos_hist_sm_li, vertice, dni, refer_pos,
                                                   fixed_point_labels, fixed_point_lonlat)
@@ -215,7 +228,7 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
         mae_sm.append(mean_angular_error_violations(np.asarray(last_sm, dtype=float), directional_data, dni))
 
 
-        # ---------------- Directed MDS -----------------------
+        # ---------------- DC-SMACOF -----------------------
         pos_hist_dm_li = run_directed_MDS(vis=False)                          # history in Li units
         pos_hist_dm_px = _align_history_directed_mds(pos_hist_dm_li, vertice, dni, refer_pos) # y-up
         all_pos_hist_dm_px.append(pos_hist_dm_px)
@@ -245,13 +258,13 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
 
     # --- Aggregate statistics ---
     stats = {
-        "StressMajorization": {
+        "SMACOF": {
             "Kruskal": _series_stats(ks_sm),
             "RMSE_km": _series_stats(rmse_sm),
             "VR": _series_stats(vr_sm),
             "MAE_theta": _series_stats(mae_sm),
         },
-        "DirectedMDS": {
+        "DC-SMACOF": {
             "Kruskal": _series_stats(ks_dm),
             "RMSE_km": _series_stats(rmse_dm),
             "VR": _series_stats(vr_dm),
@@ -291,8 +304,8 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
     return {
         "stats": stats,
         "mean_history": {
-            "StressMajorization_px": to_list(mean_hist_sm),
-            "DirectedMDS_px": to_list(mean_hist_dm),
+            "SMACOF_px": to_list(mean_hist_sm),
+            "DC-SMACOF_px": to_list(mean_hist_dm),
             "PhysicsSim_px": to_list(mean_hist_ph),
         },
         "per_run": {
@@ -302,8 +315,8 @@ def multi_measurement_benchmark(n_runs: int = 100, refer_pos=(600, 500), fixed_p
             "MAE_theta": {"SM": mae_sm, "DM": mae_dm, "PH": mae_ph},
         },
         "all_pos_history_px": {
-            "StressMajorization": all_pos_hist_sm_px,
-            "DirectedMDS": all_pos_hist_dm_px,
+            "SMACOF": all_pos_hist_sm_px,
+            "DC-SMACOF": all_pos_hist_dm_px,
             "PhysicsSim": all_pos_hist_ph_px,
         },
     }

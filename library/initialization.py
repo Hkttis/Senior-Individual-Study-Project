@@ -31,16 +31,14 @@ def generate_CHEN_initial_positions (refer_pos, fixed_point_labels, fixed_points
     return vertice,dni,data,pos_matrix,fixed_positions_list
 
 def construct_Chen_graph(data):
-    countryset = set()
-    for row in data :
-        countryset.add(row[0])
-        countryset.add(row[1])
     vertice = []
     dni = {}
     edges = []
-    for coun in countryset :
-        dni[coun] = len(vertice)
-        vertice.append(coun)
+    for row in data:
+        for coun in row[:2]:
+            if coun not in dni:
+                dni[coun] = len(vertice)
+                vertice.append(coun)
     graph = [[] for i in range(len(vertice))]
     for row in data :
         edges.append((row[0],row[1]))

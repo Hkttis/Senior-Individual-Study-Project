@@ -8,7 +8,7 @@ from copy import deepcopy
 
 from library.config import *
 from library.visualization import plotting_physics_simulation
-from library.metrics import stress_function
+from library.metrics import raw_distance_stress_from_sim_data
 from library.units import pos_matrix_sim2km
 from library.directions import DIR4_SIM, DIR4DIAG_RAW_SIM, DIR8_UNIT_SIM
 
@@ -25,12 +25,16 @@ def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_p
     min_distance = MIN_DISTANCE_BASE
     resistance = RESISTANCE_BASE
 
-    pygame.init()
-    screen = pygame.display.set_mode((1200, 750))
     space = pymunk.Space()
     pymunk.pygame_util.positive_y_is_up = True
-    draw_options = pymunk.pygame_util.DrawOptions(screen)
-    font = pygame.font.SysFont("Microsoft YaHei", 12)
+    screen = None
+    draw_options = None
+    font = None
+    if plot:
+        pygame.init()
+        screen = pygame.display.set_mode((1200, 750))
+        draw_options = pymunk.pygame_util.DrawOptions(screen)
+        font = pygame.font.SysFont("Microsoft YaHei", 12)
 
     nodes,space = create_nodes_and_springs(
         n,mass,radius,vrange,spring_stiffness,spring_damping,fixmass,
@@ -42,8 +46,9 @@ def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_p
         screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix, plot
     )
 
-    pygame.display.quit()
-    pygame.quit()
+    if plot:
+        pygame.display.quit()
+        pygame.quit()
 
     return wrong_direction_lists,stress_history,pos_history,pos_matrix
 
@@ -93,18 +98,20 @@ def create_nodes_and_springs(n,mass,radius,vrange,spring_stiffness,spring_dampin
 
 def run_physics_simulation(min_distance,repulsion_strength,resistance,directional_force_magnitude,
                            screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix,plot):
-    clock = pygame.time.Clock()
+    clock = pygame.time.Clock() if plot else None
     iteration = 0
     stress_history = []
     pos_history = []
     while True:
         iteration += 1
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return [], stress_history, pos_history, pos_matrix
+        if plot:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return [], stress_history, pos_history, pos_matrix
 
         space.step(0.01)
-        clock.tick(60)
+        if clock is not None:
+            clock.tick(60)
 
         nodes,cnt,wrong_direction_lists = apply_forces(
             min_distance,repulsion_strength,resistance,directional_force_magnitude,
@@ -112,10 +119,10 @@ def run_physics_simulation(min_distance,repulsion_strength,resistance,directiona
         )
 
         for i,node in enumerate(nodes):
-            pos_matrix[i] = nodes[i].position
+            pos_matrix[i] = [float(nodes[i].position.x), float(nodes[i].position.y)]
         pos_history.append(deepcopy(pos_matrix))
 
-        current_stress = stress_function(data,dni,pos_matrix_sim2km(pos_matrix))
+        current_stress = raw_distance_stress_from_sim_data(data,dni,pos_matrix_sim2km(pos_matrix))
 
         if plot:
             screen,space = plotting_physics_simulation(

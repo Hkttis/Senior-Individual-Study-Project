@@ -27,7 +27,7 @@ def load_site_points():
 
 
 def get_anchor_labels():
-    return [row["name"] for row in load_site_points() if row["use_role"] == "anchor"]
+    return [row["name"] for row in load_site_points() if row["use_role"] in {"anchor", "anchor_align"}]
 
 
 def get_test_site_labels():
@@ -285,8 +285,8 @@ def save_all_pos_histories_px_csv(
     CSV schema: run,frame,node_idx,label,x_px,y_px  (encoding='utf-8-sig')
     """
     _ensure_required_paths()
-    _write_model_csv(FILE_PATHS["save_all_pos_sm_px_data"], all_pos_hist_sm_px, vertice, "StressMajorization")
-    _write_model_csv(FILE_PATHS["save_all_pos_dm_px_data"], all_pos_hist_dm_px, vertice, "DirectedMDS")
+    _write_model_csv(FILE_PATHS["save_all_pos_sm_px_data"], all_pos_hist_sm_px, vertice, "SMACOF")
+    _write_model_csv(FILE_PATHS["save_all_pos_dm_px_data"], all_pos_hist_dm_px, vertice, "DC-SMACOF")
     _write_model_csv(FILE_PATHS["save_all_pos_ph_px_data"], all_pos_hist_ph_px, vertice, "PhysicsSim")
 
 def _read_model_csv(path: str) -> Tuple[List[List[List[Tuple[float, float]]]], Optional[List[str]]]:

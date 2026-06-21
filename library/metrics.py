@@ -4,7 +4,7 @@ from copy import deepcopy
 import builtins
 
 from library.units import *
-from library.data_io import uploading_ground_truth, get_anchor_align_label, load_site_points
+from library.data_io import uploading_ground_truth, get_anchor_align_label
 from library.anchor_frame import px_list_to_km_list
 from library.geometry import lcc_transformation
 from library.coordinates import flipping_y
@@ -12,16 +12,27 @@ from library.config import theta_thr_4dir, theta_thr_8dir
 from library.directions import DIR4_SIM, DIR8_UNIT_SIM
 
 
-def stress_function(data,dni,pos_matrix) : # data units : km
+def raw_distance_stress_from_sim_data(data, dni, pos_matrix_km):
+    """Return unnormalized squared relative distance stress.
+
+    data row distances are in simulation units; pos_matrix_km is in km.
+    This is used as a convergence trace, not as the paper's Kruskal objective.
+    """
     stress = 0
     for row in data :
         ind1 = dni[row[0]]
         ind2 = dni[row[1]]
-        # turn pixel_unit to Li unit
-        distance = math.sqrt((pos_matrix[ind2][0]-pos_matrix[ind1][0])**2 + (pos_matrix[ind2][1]-pos_matrix[ind1][1])**2)
-        ideal_dist = float(row[2]) / Li2km
+        distance = math.sqrt(
+            (pos_matrix_km[ind2][0] - pos_matrix_km[ind1][0]) ** 2
+            + (pos_matrix_km[ind2][1] - pos_matrix_km[ind1][1]) ** 2
+        )
+        ideal_dist = float(row[2]) / km2sim
         stress += (distance-ideal_dist)**2 / (ideal_dist**2)
     return stress
+
+
+def stress_function(data,dni,pos_matrix) : # backward-compatible alias
+    return raw_distance_stress_from_sim_data(data, dni, pos_matrix)
 
 
 def calculate_kruskals_stress(dni,pos_matrix,data) : # pos_matrix units = km, data units = sim
@@ -64,11 +75,9 @@ def procrustes_align_by_fixed_points(
     fixed_point_labels = list(fixed_point_labels)
     fixed_point_lonlat = list(fixed_point_lonlat)
     if anchor_label not in fixed_point_labels:
-        site_points = {row["name"]: (float(row["lon"]), float(row["lat"])) for row in load_site_points()}
-        if anchor_label not in site_points:
-            raise ValueError(f"Anchor align '{anchor_label}' is missing from site points.")
-        fixed_point_labels.append(anchor_label)
-        fixed_point_lonlat.append(site_points[anchor_label])
+        raise ValueError(
+            f"Frame anchor '{anchor_label}' must be explicitly included in fixed_point_labels."
+        )
 
     if len(fixed_point_labels) == 0 or (len(fixed_point_labels) != len(fixed_point_lonlat)):
         return sim_km
@@ -136,7 +145,7 @@ def procrustes_align_by_fixed_points(
 
     return aligned_pos.tolist()
 
-# For stress majorization
+# For SMACOF
 def procrustes_analysis_to_gt(flip, vertice, dni, refer_pos) :
     """
     Align positions (in Li) to ground truth (in km) using rotation/reflection Procrustes
