@@ -24,16 +24,22 @@ _MPLCONFIGDIR = Path(OUTPUT_DIR) / ".matplotlib"
 _MPLCONFIGDIR.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", str(_MPLCONFIGDIR))
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib.font_manager import FontProperties
 import pandas as pd
 
 from library.anchor_frame import px_list_to_km_list
 from library.data_io import get_anchor_labels, get_test_site_labels, load_ini_data_from_csv, load_site_points
 from library.geometry import get_lcc_bounds, get_lcc_parameters, lcc_transformation_with_anchor
+
+
+def _get_plotting():
+    """Load matplotlib only for review figure export."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.font_manager import FontProperties
+
+    return plt, FontProperties
 
 
 def _assert_lcc_matches_ablation_config(ablation_outdir: Path) -> None:
@@ -73,6 +79,7 @@ def _load_gt_km():
 
 
 def _plot_variant_map(df_pos: pd.DataFrame, variant: str, seed: int, out_png: Path) -> None:
+    plt, FontProperties = _get_plotting()
     _vertice, _dni, anchors, tests, gt_km = _load_gt_km()
     subset = df_pos[(df_pos["variant"] == variant) & (df_pos["seed"] == seed)].copy()
     if subset.empty:
@@ -119,6 +126,7 @@ def _plot_variant_map(df_pos: pd.DataFrame, variant: str, seed: int, out_png: Pa
 
 
 def _plot_metric_bars(df_runs: pd.DataFrame, out_png: Path) -> None:
+    plt, _FontProperties = _get_plotting()
     ok = df_runs[df_runs["status"] == "ok"].copy()
     if ok.empty:
         raise ValueError("No successful ablation rows found.")

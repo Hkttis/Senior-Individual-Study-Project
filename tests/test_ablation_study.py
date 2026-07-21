@@ -11,13 +11,25 @@ from library.data_io import get_anchor_labels, get_test_site_labels
 from run_paper_script.ch5_ablation_study import (
     PHYSICS_VARIANTS,
     _build_paired_comparisons,
+    _load_selected_dc_smacof_params,
     _load_selected_hpo_params,
     _pairwise_distance_stats_km,
+    _run_directed_mds_baseline,
+    _run_smacof_baseline,
     _series_stats,
     _variant_forces,
     run_ablation_study,
 )
+import run_paper_script.ch5_ablation_study as ablation_module
+import run_paper_script.ch6_visualize_representative as representative_module
+import library.model_cmp as model_cmp
+from MDS_model.directed_mds_model import revise_direction
 from scripts.export_ablation_review import _assert_lcc_matches_ablation_config
+from run_paper_script.ch6_visualize_representative import (
+    _rerun_as_variant_history,
+    _select_representative_seed_from_as,
+    _verify_rerun_matches_as_metrics,
+)
 
 
 def _local_tmp_dir() -> Path:
@@ -67,6 +79,131 @@ def test_variant_forces_disable_expected_terms():
     assert repulsion == pytest.approx(0.0)
 
 
+def test_smacof_baseline_applies_procrustes(monkeypatch):
+    calls = {"procrustes": 0}
+
+    def fake_stress_majorization(graph, dni, vertice, edges):
+        return np.array([[1.0, 1.0], [2.0, 2.0]]), [], []
+
+    def fake_alignment(pos, vertice, dni, refer_pos, y_down=False, anchor_label=None):
+        return np.asarray(pos, dtype=float)
+
+    def fake_procrustes(pos, fixed_labels, fixed_lonlat, dni, refer_pos=None, anchor_label=None):
+        calls["procrustes"] += 1
+        assert anchor_label == "A"
+        return np.asarray(pos, dtype=float)
+
+    monkeypatch.setattr(ablation_module, "stress_majorization", fake_stress_majorization)
+    monkeypatch.setattr(ablation_module, "alignment_and_scaling", fake_alignment)
+    monkeypatch.setattr(ablation_module, "procrustes_align_by_fixed_points", fake_procrustes)
+
+    _run_smacof_baseline(
+        seed=0,
+        graph=None,
+        vertice=["A", "B"],
+        dni={"A": 0, "B": 1},
+        edges=[],
+        anchor_labels=["A", "B"],
+        anchor_lonlat=[(1.0, 1.0), (2.0, 2.0)],
+        refer_pos_sim=[600.0, 250.0],
+    )
+
+    assert calls["procrustes"] == 1
+
+
+def test_dc_smacof_baseline_does_not_apply_procrustes(monkeypatch):
+    def fake_run_directed_mds(vis=False, w_weight_value=None, v_weight_value=None):
+        return [np.array([[1.0, 1.0], [2.0, 2.0]])]
+
+    def fake_alignment(pos, vertice, dni, refer_pos, y_down=False, anchor_label=None):
+        assert anchor_label == "A"
+        return np.asarray(pos, dtype=float)
+
+    def fail_procrustes(*args, **kwargs):
+        raise AssertionError("DC-SMACOF must not use Procrustes alignment")
+
+    monkeypatch.setattr(ablation_module, "run_directed_MDS", fake_run_directed_mds)
+    monkeypatch.setattr(ablation_module, "alignment_and_scaling", fake_alignment)
+    monkeypatch.setattr(ablation_module, "procrustes_align_by_fixed_points", fail_procrustes)
+
+    pos = _run_directed_mds_baseline(
+        seed=0,
+        vertice=["A", "B"],
+        dni={"A": 0, "B": 1},
+        anchor_labels=["A", "B"],
+        anchor_lonlat=[(1.0, 1.0), (2.0, 2.0)],
+        refer_pos_sim=[600.0, 250.0],
+    )
+
+    assert pos.shape == (2, 2)
+
+
+def test_dc_smacof_baseline_passes_hpo_weights(monkeypatch):
+    captured = {}
+
+    def fake_run_directed_mds(vis=False, w_weight_value=None, v_weight_value=None):
+        captured["w_weight_value"] = w_weight_value
+        captured["v_weight_value"] = v_weight_value
+        return [np.array([[1.0, 1.0], [2.0, 2.0]])]
+
+    def fake_alignment(pos, vertice, dni, refer_pos, y_down=False, anchor_label=None):
+        return np.asarray(pos, dtype=float)
+
+    monkeypatch.setattr(ablation_module, "run_directed_MDS", fake_run_directed_mds)
+    monkeypatch.setattr(ablation_module, "alignment_and_scaling", fake_alignment)
+
+    _run_directed_mds_baseline(
+        seed=0,
+        vertice=["A", "B"],
+        dni={"A": 0, "B": 1},
+        anchor_labels=["A", "B"],
+        anchor_lonlat=[(1.0, 1.0), (2.0, 2.0)],
+        refer_pos_sim=[600.0, 250.0],
+        dc_w_weight=1.0,
+        dc_v_weight=0.1,
+    )
+
+    assert captured["w_weight_value"] == pytest.approx(1.0)
+    assert captured["v_weight_value"] == pytest.approx(0.1)
+
+
+def test_run_directed_mds_uses_verified_direction_data(monkeypatch):
+    captured = {}
+
+    def fail_read_csvfile(*args, **kwargs):
+        raise AssertionError("DC-SMACOF must not read legacy hard-coded GPT CSV files")
+
+    def fake_uploading_directional_data():
+        return [["A", "B", "東"], ["B", "C", "西北"]]
+
+    def fake_load_ini_data_from_csv(file_paths):
+        return [], ["A", "B", "C"], {"A": 0, "B": 1, "C": 2}, [], []
+
+    def fake_directed_mds(c_data, data, graph, vertice, dni, edges, distance_weight=None, direction_weight=None):
+        captured["c_data"] = c_data
+        captured["distance_weight"] = distance_weight
+        captured["direction_weight"] = direction_weight
+        return np.zeros((3, 2)), [], [np.zeros((3, 2))]
+
+    monkeypatch.setattr(model_cmp, "read_csvfile", fail_read_csvfile, raising=False)
+    monkeypatch.setattr(model_cmp, "uploading_directional_data", fake_uploading_directional_data)
+    monkeypatch.setattr(model_cmp, "load_ini_data_from_csv", fake_load_ini_data_from_csv)
+    monkeypatch.setattr(model_cmp, "directed_MDS", fake_directed_mds)
+
+    history = model_cmp.run_directed_MDS(vis=False)
+
+    assert len(history) == 1
+    assert captured["c_data"] == [[], [], [["A", "B", "東"], ["B", "C", "西北"]], []]
+    assert captured["distance_weight"] is None
+    assert captured["direction_weight"] is None
+
+
+def test_revise_direction_keeps_verified_dir8_names():
+    rows = [["A", "B", "東"], ["B", "C", "西北"]]
+
+    assert revise_direction(rows) == rows
+
+
 def test_load_selected_hpo_params():
     tmp_dir = _local_tmp_dir()
     try:
@@ -94,6 +231,62 @@ def test_load_selected_hpo_params_prefers_selected_candidate_csv():
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def test_load_selected_dc_smacof_params_from_selected_candidate_csv():
+    tmp_dir = _local_tmp_dir()
+    try:
+        pd.DataFrame([{"alpha": -1.5, "w_weight": 1.0, "v_weight": 0.0316227766}]).to_csv(
+            tmp_dir / "dc_smacof_selected_candidate.csv", index=False, encoding="utf-8-sig"
+        )
+
+        params = _load_selected_dc_smacof_params(tmp_dir)
+
+        assert params["source"] == "dc_hpo_selected_candidate"
+        assert params["alpha"] == pytest.approx(-1.5)
+        assert params["w_weight"] == pytest.approx(1.0)
+        assert params["v_weight"] == pytest.approx(0.0316227766)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_load_selected_dc_smacof_params_manual_alpha():
+    params = _load_selected_dc_smacof_params(dc_alpha=-2.0)
+
+    assert params["source"] == "manual_cli_alpha"
+    assert params["w_weight"] == pytest.approx(1.0)
+    assert params["v_weight"] == pytest.approx(0.01)
+
+
+def test_ch6_representative_rerun_uses_ablation_dc_weights(monkeypatch):
+    captured = {}
+
+    def fake_run_directed_mds(vis=False, w_weight_value=None, v_weight_value=None):
+        captured["w_weight_value"] = w_weight_value
+        captured["v_weight_value"] = v_weight_value
+        return [np.array([[1.0, 1.0], [2.0, 2.0]])]
+
+    def fake_align_history(pos_history_li, vertice, dni, anchor_labels, rp_sim):
+        return [[[float(x), float(y)] for x, y in pos_history_li[-1]]]
+
+    monkeypatch.setattr(representative_module, "run_directed_MDS", fake_run_directed_mds)
+    monkeypatch.setattr(representative_module, "_align_dc_smacof_history", fake_align_history)
+
+    history = _rerun_as_variant_history(
+        variant="DC-SMACOF",
+        seed=0,
+        config={"refer_pos_sim": [600.0, 250.0], "dc_smacof_hpo": {"w_weight": 1.0, "v_weight": 0.1}},
+        graph=[],
+        vertice=["A", "B"],
+        dni={"A": 0, "B": 1},
+        edges=[],
+        anchor_labels=["A", "B"],
+        anchor_lonlat=[(1.0, 1.0), (2.0, 2.0)],
+    )
+
+    assert history
+    assert captured["w_weight_value"] == pytest.approx(1.0)
+    assert captured["v_weight_value"] == pytest.approx(0.1)
+
+
 def test_ablation_uses_current_anchor_and_test_contract():
     assert get_anchor_labels() == ["鄯善", "車師前", "都護治/烏壘"]
     assert len(get_test_site_labels()) == 8
@@ -117,6 +310,91 @@ def test_pairwise_distance_stats_km_are_positive():
 
     assert min_dist > 0
     assert median_dist >= min_dist
+
+
+def test_select_representative_seed_from_ablation_metrics_uses_median_distance():
+    group = pd.DataFrame(
+        [
+            {
+                "variant": "PhysicsSim-Full",
+                "seed": 0,
+                "status": "ok",
+                "E_distance_stress": 1.0,
+                "E_direction_vr": 1.0,
+                "E_direction_mae": 1.0,
+                "RMSE_test_km": 1.0,
+            },
+            {
+                "variant": "PhysicsSim-Full",
+                "seed": 1,
+                "status": "ok",
+                "E_distance_stress": 2.0,
+                "E_direction_vr": 2.0,
+                "E_direction_mae": 2.0,
+                "RMSE_test_km": 2.0,
+            },
+            {
+                "variant": "PhysicsSim-Full",
+                "seed": 2,
+                "status": "ok",
+                "E_distance_stress": 20.0,
+                "E_direction_vr": 20.0,
+                "E_direction_mae": 20.0,
+                "RMSE_test_km": 20.0,
+            },
+        ]
+    )
+
+    selected = _select_representative_seed_from_as(group)
+
+    assert selected["seed"] == 1
+    assert selected["selection_scope"] == "one representative seed per AS variant"
+    assert selected["metrics"]["RMSE_test_km"] == pytest.approx(2.0)
+
+
+def test_verify_rerun_matches_as_metrics_accepts_close_values():
+    rep = {
+        "variant": "PhysicsSim-Full",
+        "seed": 0,
+        "metrics": {
+            "E_distance_stress": 1.0,
+            "E_direction_vr": 0.1,
+            "E_direction_mae": 0.2,
+            "RMSE_test_km": 100.0,
+        },
+    }
+    rerun = {
+        "E_distance_stress": 1.0 + 1e-8,
+        "E_direction_vr": 0.1,
+        "E_direction_mae": 0.2,
+        "RMSE_test_km": 100.000001,
+    }
+
+    diffs = _verify_rerun_matches_as_metrics(rep, rerun, abs_tol=1e-5, rel_tol=1e-5)
+
+    assert all(item["ok"] for item in diffs.values())
+
+
+def test_verify_rerun_matches_as_metrics_rejects_large_drift():
+    rep = {
+        "variant": "DC-SMACOF",
+        "seed": 0,
+        "metrics": {
+            "E_distance_stress": 1.0,
+            "E_direction_vr": 0.1,
+            "E_direction_mae": 0.2,
+            "RMSE_test_km": 100.0,
+        },
+    }
+    rerun = {
+        "E_distance_stress": 1.0,
+        "E_direction_vr": 0.1,
+        "E_direction_mae": 0.2,
+        "RMSE_test_km": 110.0,
+    }
+
+    with pytest.raises(ValueError):
+        _verify_rerun_matches_as_metrics(rep, rerun, abs_tol=1e-5, rel_tol=1e-5)
 
 
 def test_build_paired_comparisons_uses_same_seed_differences():
@@ -159,6 +437,8 @@ def test_build_paired_comparisons_uses_same_seed_differences():
     assert row["n_pairs"] == 2
     assert row["paired_diff_mean"] == pytest.approx(0.0)
     assert row["left_better_win_rate"] == pytest.approx(0.5)
+    assert "min_pairwise_distance_km" not in set(paired["metric"])
+    assert "median_pairwise_distance_km" not in set(paired["metric"])
 
 
 def test_ablation_smoke_output_contract_if_available():

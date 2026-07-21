@@ -32,7 +32,7 @@ from library.data_io import (
 )
 from library.geometry import get_lcc_bounds, get_lcc_parameters
 from library.metrics import alignment_and_scaling, calculate_kruskals_stress, direction_violation_rate
-from library.model_cmp import run_directed_MDS
+from library.model_cmp import get_dc_smacof_direction_method_metadata, run_directed_MDS
 from library.units import data_Li2sim, pos_matrix_sim2km
 from run_paper_script.ch5_hparam_kfold_gridsearch_pareto import _rmse_labels_km
 
@@ -326,6 +326,10 @@ def run_dc_smacof_hparam(
     graph, vertice, dni, edges, data_li = load_ini_data_from_csv(FILE_PATHS)
     data_sim = data_Li2sim(data_li)
     directional_data = uploading_directional_data()
+    direction_method_metadata, direction_preprocessing = get_dc_smacof_direction_method_metadata(
+        directional_data,
+        dni,
+    )
     gt_lonlat = uploading_ground_truth(vertice, dni)
     anchor_labels, anchor_align_label, rmse_anchor_labels = _anchor_split()
     alphas = _make_alpha_grid(alpha_min, alpha_max, alpha_step)
@@ -381,6 +385,19 @@ def run_dc_smacof_hparam(
     df_runs.to_csv(outdir_path / "dc_smacof_hparam_runs_by_seed.csv", index=False, encoding="utf-8-sig")
     df_summary.to_csv(outdir_path / "dc_smacof_hparam_summary.csv", index=False, encoding="utf-8-sig")
     df_pareto.to_csv(outdir_path / "dc_smacof_pareto_front.csv", index=False, encoding="utf-8-sig")
+    pd.DataFrame(
+        [
+            {
+                **record,
+                "original_observations": json.dumps(record["original_observations"], ensure_ascii=False),
+            }
+            for record in direction_preprocessing
+        ]
+    ).to_csv(
+        outdir_path / "dc_smacof_direction_preprocessing.csv",
+        index=False,
+        encoding="utf-8-sig",
+    )
     if selected is not None:
         pd.DataFrame([selected.to_dict()]).to_csv(outdir_path / "dc_smacof_selected_candidate.csv", index=False, encoding="utf-8-sig")
     (outdir_path / "dc_smacof_selection_meta.json").write_text(
@@ -389,6 +406,8 @@ def run_dc_smacof_hparam(
     )
     config = {
         "model": "DC-SMACOF",
+        **direction_method_metadata,
+        "direction_preprocessing_file": "dc_smacof_direction_preprocessing.csv",
         "alpha_range": [float(alpha_min), float(alpha_max), float(alpha_step)],
         "alpha_scale": "base-10: v_weight=w_weight*10^alpha",
         "seeds": [int(s) for s in seeds],

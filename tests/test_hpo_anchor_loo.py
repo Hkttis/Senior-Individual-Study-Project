@@ -1,6 +1,7 @@
 import math
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from library.initialization import construct_Chen_graph
@@ -8,6 +9,7 @@ from run_paper_script.ch5_hparam_kfold_gridsearch_pareto import (
     _build_anchor_loo_folds,
     _euclidean_rmse_km,
     _non_dominated_mask,
+    _select_one_se_balanced_candidate,
 )
 
 
@@ -88,3 +90,48 @@ def test_euclidean_rmse_raises_on_missing_ground_truth():
 
     with pytest.raises(ValueError):
         _euclidean_rmse_km(pred_km=pred_km, gt_km=gt_km, eval_labels=["A"], dni=dni)
+
+
+def test_select_one_se_balanced_candidate_prefers_balanced_candidate_within_threshold():
+    df = pd.DataFrame(
+        [
+            {
+                "alpha": 1.0,
+                "beta": -1.0,
+                "n_folds": 3,
+                "E_distance_stress_mean": 0.030,
+                "E_direction_vr_mean": 0.016,
+                "RMSE_anchor_LOO_mean_km": 147.9,
+                "RMSE_anchor_LOO_std_km": 9.9,
+            },
+            {
+                "alpha": 1.0,
+                "beta": -0.5,
+                "n_folds": 3,
+                "E_distance_stress_mean": 0.027,
+                "E_direction_vr_mean": 0.017,
+                "RMSE_anchor_LOO_mean_km": 148.4,
+                "RMSE_anchor_LOO_std_km": 9.8,
+            },
+            {
+                "alpha": 1.0,
+                "beta": 0.5,
+                "n_folds": 3,
+                "E_distance_stress_mean": 0.021,
+                "E_direction_vr_mean": 0.035,
+                "RMSE_anchor_LOO_mean_km": 161.7,
+                "RMSE_anchor_LOO_std_km": 49.5,
+            },
+        ]
+    )
+
+    selected, meta = _select_one_se_balanced_candidate(
+        df,
+        ["E_distance_stress_mean", "E_direction_vr_mean", "RMSE_anchor_LOO_mean_km"],
+    )
+
+    assert selected["alpha"] == pytest.approx(1.0)
+    assert selected["beta"] == pytest.approx(-0.5)
+    assert meta["selection_rule"] == "pareto_one_se_balanced"
+    assert meta["one_se_candidate_count"] == 2
+    assert meta["one_se_threshold_km"] == pytest.approx(147.9 + 9.9 / math.sqrt(3))

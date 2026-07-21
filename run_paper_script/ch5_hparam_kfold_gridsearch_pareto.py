@@ -70,10 +70,14 @@ _MPLCONFIGDIR = Path(OUTPUT_DIR) / ".matplotlib"
 _MPLCONFIGDIR.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", str(_MPLCONFIGDIR))
 
-import matplotlib
+def _get_plt():
+    """Load matplotlib only when an HPO figure is actually requested."""
+    import matplotlib
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    return plt
 
 
 @dataclass
@@ -300,7 +304,26 @@ def _run_physics_eval(
     return metrics, pos_final_y_up, vertice, dni
 
 
-def _plot_heatmap(df_grid: pd.DataFrame, value_col: str, out_png: Path, title: str) -> None:
+def _selected_grid_row(df_grid: pd.DataFrame, selected: pd.Series | None) -> pd.Series | None:
+    if selected is None:
+        return None
+    match = df_grid[
+        np.isclose(df_grid["alpha"].to_numpy(float), float(selected["alpha"]))
+        & np.isclose(df_grid["beta"].to_numpy(float), float(selected["beta"]))
+    ]
+    if len(match) != 1:
+        raise ValueError("Selected alpha/beta does not identify exactly one HPO grid point.")
+    return match.iloc[0]
+
+
+def _plot_heatmap(
+    df_grid: pd.DataFrame,
+    value_col: str,
+    out_png: Path,
+    title: str,
+    selected: pd.Series | None = None,
+) -> None:
+    plt = _get_plt()
     pivot = df_grid.pivot(index="beta", columns="alpha", values=value_col).sort_index(ascending=True)
     fig, ax = plt.subplots(figsize=(8.5, 6.5))
     im = ax.imshow(pivot.values, origin="lower", aspect="auto")
@@ -312,17 +335,29 @@ def _plot_heatmap(df_grid: pd.DataFrame, value_col: str, out_png: Path, title: s
     ax.set_xlabel("alpha = log10(w_dir / w_dis)")
     ax.set_ylabel("beta = log10(w_reg / w_dis)")
     ax.set_title(title)
-    vals = pivot.values
-    if np.isfinite(vals).any():
-        iy, ix = np.unravel_index(np.nanargmin(vals), vals.shape)
-        ax.scatter([ix], [iy], marker="x", s=120)
-        ax.text(ix + 0.1, iy + 0.1, "best", fontsize=9)
+    if selected is not None:
+        alpha, beta = float(selected["alpha"]), float(selected["beta"])
+        if alpha not in pivot.columns or beta not in pivot.index:
+            raise ValueError("Selected alpha/beta is not present in the heatmap grid.")
+        ax.scatter(
+            [pivot.columns.get_loc(alpha)], [pivot.index.get_loc(beta)], marker="*", s=220,
+            c="#d62728", edgecolors="black", linewidths=0.8,
+            label=f"Selected (alpha={alpha:g}, beta={beta:g})",
+            zorder=5,
+        )
+        ax.legend(loc="best", fontsize=8)
     fig.tight_layout()
     fig.savefig(out_png, dpi=180)
     plt.close(fig)
 
 
-def _plot_pareto_3d(df_grid: pd.DataFrame, pareto_mask: np.ndarray, out_png: Path) -> None:
+def _plot_pareto_3d(
+    df_grid: pd.DataFrame,
+    pareto_mask: np.ndarray,
+    out_png: Path,
+    selected: pd.Series | None = None,
+) -> None:
+    plt = _get_plt()
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
     x = df_grid["E_distance_stress_mean"].to_numpy(float)
@@ -332,6 +367,14 @@ def _plot_pareto_3d(df_grid: pd.DataFrame, pareto_mask: np.ndarray, out_png: Pat
     ax = fig.add_subplot(111, projection="3d")
     ax.scatter(x[~pareto_mask], y[~pareto_mask], z[~pareto_mask], alpha=0.45, s=20, label="All grid points")
     ax.scatter(x[pareto_mask], y[pareto_mask], z[pareto_mask], s=40, label="Pareto front")
+    selected_row = _selected_grid_row(df_grid, selected)
+    if selected_row is not None:
+        ax.scatter(
+            [selected_row["E_distance_stress_mean"]], [selected_row["E_direction_vr_mean"]],
+            [selected_row["RMSE_anchor_LOO_mean_km"]], marker="*", s=220, c="#d62728",
+            edgecolors="black", linewidths=0.8,
+            label=f"Selected (alpha={selected_row['alpha']:g}, beta={selected_row['beta']:g})",
+        )
     ax.set_xlabel("E_distance (Kruskal stress)")
     ax.set_ylabel("E_direction (violation rate)")
     ax.set_zlabel("RMSE_anchor_LOO (km)")
@@ -342,19 +385,34 @@ def _plot_pareto_3d(df_grid: pd.DataFrame, pareto_mask: np.ndarray, out_png: Pat
     plt.close(fig)
 
 
-def _plot_pareto_2d_projections(df_grid: pd.DataFrame, pareto_mask: np.ndarray, out_png: Path) -> None:
+def _plot_pareto_2d_projections(
+    df_grid: pd.DataFrame,
+    pareto_mask: np.ndarray,
+    out_png: Path,
+    selected: pd.Series | None = None,
+) -> None:
+    plt = _get_plt()
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.8))
     cols = [
         ("E_distance_stress_mean", "E_direction_vr_mean"),
         ("E_distance_stress_mean", "RMSE_anchor_LOO_mean_km"),
         ("E_direction_vr_mean", "RMSE_anchor_LOO_mean_km"),
     ]
+    selected_row = _selected_grid_row(df_grid, selected)
     for ax, (cx, cy) in zip(axes, cols):
         ax.scatter(df_grid.loc[~pareto_mask, cx], df_grid.loc[~pareto_mask, cy], alpha=0.45, s=20)
         ax.scatter(df_grid.loc[pareto_mask, cx], df_grid.loc[pareto_mask, cy], s=36)
+        if selected_row is not None:
+            ax.scatter(
+                [selected_row[cx]], [selected_row[cy]], marker="*", s=180, c="#d62728",
+                edgecolors="black", linewidths=0.8, zorder=5,
+            )
         ax.set_xlabel(cx)
         ax.set_ylabel(cy)
         ax.grid(alpha=0.25)
+    if selected_row is not None:
+        axes[0].scatter([], [], marker="*", s=150, c="#d62728", edgecolors="black", label="Selected")
+        axes[0].legend(loc="best", fontsize=8)
     fig.suptitle("Pareto Front 2D Projections")
     fig.tight_layout()
     fig.savefig(out_png, dpi=180)
@@ -473,7 +531,7 @@ def _run_final_selected_model(
         "anchor_labels": list(anchor_labels),
         "test_labels": list(test_labels),
         "RMSE_final_test_mean_km": float(df_final["RMSE_final_test_km"].mean()),
-        "RMSE_final_test_std_km": float(df_final["RMSE_final_test_km"].std(ddof=0)),
+        "RMSE_final_test_std_km": float(df_final["RMSE_final_test_km"].std(ddof=1)),
         "E_distance_stress_mean": float(df_final["E_distance_stress"].mean()),
         "E_direction_vr_mean": float(df_final["E_direction_vr"].mean()),
         "best_seed_by_final_test_rmse": best_seed,
@@ -613,11 +671,11 @@ def run_anchor_loo_gridsearch_pareto(
                     "n_seeds": int(len(seeds)),
                     "n_failed_seeds": n_failed_seeds,
                     "E_distance_stress_mean": float(df_seed["E_distance_stress"].mean()),
-                    "E_distance_stress_std": float(df_seed["E_distance_stress"].std(ddof=0)),
+                    "E_distance_stress_std": float(df_seed["E_distance_stress"].std(ddof=1)),
                     "E_direction_vr_mean": float(df_seed["E_direction_vr"].mean()),
-                    "E_direction_vr_std": float(df_seed["E_direction_vr"].std(ddof=0)),
+                    "E_direction_vr_std": float(df_seed["E_direction_vr"].std(ddof=1)),
                     "RMSE_anchor_LOO_mean_km": float(df_seed["RMSE_km"].mean()),
-                    "RMSE_anchor_LOO_std_km": float(df_seed["RMSE_km"].std(ddof=0)),
+                    "RMSE_anchor_LOO_std_km": float(df_seed["RMSE_km"].std(ddof=1)),
                 }
                 fold_rows.append(fold_summary)
                 combo_fold_metrics.append(fold_summary)
@@ -637,11 +695,11 @@ def run_anchor_loo_gridsearch_pareto(
                     "n_seeds_per_fold": int(len(seeds)),
                     "n_failed_runs": int(df_folds_for_combo["n_failed_seeds"].sum()),
                     "E_distance_stress_mean": float(df_folds_for_combo["E_distance_stress_mean"].mean()),
-                    "E_distance_stress_std": float(df_folds_for_combo["E_distance_stress_mean"].std(ddof=0)),
+                    "E_distance_stress_std": float(df_folds_for_combo["E_distance_stress_mean"].std(ddof=1)),
                     "E_direction_vr_mean": float(df_folds_for_combo["E_direction_vr_mean"].mean()),
-                    "E_direction_vr_std": float(df_folds_for_combo["E_direction_vr_mean"].std(ddof=0)),
+                    "E_direction_vr_std": float(df_folds_for_combo["E_direction_vr_mean"].std(ddof=1)),
                     "RMSE_anchor_LOO_mean_km": float(df_folds_for_combo["RMSE_anchor_LOO_mean_km"].mean()),
-                    "RMSE_anchor_LOO_std_km": float(df_folds_for_combo["RMSE_anchor_LOO_mean_km"].std(ddof=0)),
+                    "RMSE_anchor_LOO_std_km": float(df_folds_for_combo["RMSE_anchor_LOO_mean_km"].std(ddof=1)),
                 }
             )
 

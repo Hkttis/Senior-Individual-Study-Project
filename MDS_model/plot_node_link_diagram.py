@@ -560,7 +560,7 @@ def animate_node_link_pygame(
     node_radius: int = 6,
     label_font_size: int = 16,
     font_path: Optional[str] = None,
-    caption: str = "Directed MDS — Iteration Animation",
+    caption: str = "DC-SMACOF Iteration Animation",
     fps: int = 30,                      # slightly higher for smoother feel
     directed: bool = False,
     save_frames_pattern: Optional[str] = None,  # e.g. "frames/frame_%04d.bmp"

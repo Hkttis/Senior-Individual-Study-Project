@@ -54,7 +54,7 @@ from library.metrics import (
     mean_angular_error_violations,
     procrustes_align_by_fixed_points,
 )
-from library.model_cmp import run_directed_MDS
+from library.model_cmp import get_dc_smacof_direction_method_metadata, run_directed_MDS
 from library.physics import main_physics_simulation
 from library.units import data_Li2sim, pos_matrix_sim2km
 from MDS_model.stress_majorization_mds_model import stress_majorization
@@ -233,7 +233,7 @@ def _series_stats(values: Sequence[float]) -> dict:
     return {
         "n": int(arr.size),
         "mean": float(arr.mean()),
-        "std": float(arr.std(ddof=0)),
+        "std": float(arr.std(ddof=1)) if arr.size > 1 else 0.0,
         "se": float(arr.std(ddof=1) / math.sqrt(arr.size)) if arr.size > 1 else float("nan"),
         "median": float(np.median(arr)),
         "iqr": float(q75 - q25),
@@ -522,6 +522,7 @@ def run_ablation_study(
     graph, vertice, dni, edges, data_li = load_ini_data_from_csv(FILE_PATHS)
     data_sim = data_Li2sim(data_li)
     directional_data = uploading_directional_data()
+    dc_direction_method, _ = get_dc_smacof_direction_method_metadata(directional_data, dni)
     gt_lonlat = uploading_ground_truth(vertice, dni)
     anchor_labels = get_anchor_labels()
     test_labels = get_test_site_labels()
@@ -653,6 +654,7 @@ def run_ablation_study(
         "alpha": alpha,
         "beta": beta,
         "dc_smacof_hpo": dc_params,
+        "dc_smacof_direction_method": dc_direction_method,
         "seeds": list(map(int, seeds)),
         "anchor_labels": list(anchor_labels),
         "test_labels": list(test_labels),

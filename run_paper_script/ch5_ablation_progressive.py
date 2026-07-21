@@ -39,7 +39,7 @@ from library.metrics import (
     mean_angular_error_violations,
     procrustes_align_by_fixed_points,
 )
-from library.model_cmp import run_directed_MDS
+from library.model_cmp import get_dc_smacof_direction_method_metadata, run_directed_MDS
 from library.physics import main_physics_simulation
 from library.progressive_alignment import (
     anchored_similarity_procrustes,
@@ -337,6 +337,7 @@ def run_progressive_ablation(*, hpo_outdir, dc_hpo_outdir, seeds, random_runs, o
     calibration_lonlat = [tuple(gt_lonlat[dni[label]]) for label in calibration_labels]
     targets = _target_positions_sim(dni, gt_lonlat, anchor_label, DEFAULT_REFER_POS_SIM)
     data_sim, directional_data = data_Li2sim(distance_data), uploading_directional_data()
+    dc_direction_method, _ = get_dc_smacof_direction_method_metadata(directional_data, dni)
     rows, positions = [], []
 
     def record(variant, seed, points, extras=None):
@@ -379,7 +380,7 @@ def run_progressive_ablation(*, hpo_outdir, dc_hpo_outdir, seeds, random_runs, o
     random_rows.to_csv(outdir / "random_align_runs.csv", index=False, encoding="utf-8-sig")
     random_summary.to_csv(outdir / "random_align_summary.csv", index=False, encoding="utf-8-sig")
     status_summary.to_csv(outdir / "progressive_run_status.csv", index=False, encoding="utf-8-sig")
-    config = {"hpo_outdir": str(hpo_outdir), "dc_hpo_outdir": str(dc_hpo_outdir), "alpha": alpha, "beta": beta, "dc_smacof_hpo": dc_params, "seeds": list(seeds), "random_runs": random_runs,
+    config = {"hpo_outdir": str(hpo_outdir), "dc_hpo_outdir": str(dc_hpo_outdir), "alpha": alpha, "beta": beta, "dc_smacof_hpo": dc_params, "dc_smacof_direction_method": dc_direction_method, "seeds": list(seeds), "random_runs": random_runs,
               "calibration_labels": calibration_labels, "anchor_align_label": anchor_label, "test_labels": test_labels,
               "lcc_bounds": _as_lcc_mapping(get_lcc_bounds(), ("lon_min", "lon_max", "lat_min", "lat_max")), "lcc_parameters": _as_lcc_mapping(get_lcc_parameters(), ("lat_1", "lat_2", "lon_0")), "lcc_standard_parallel_rule": "lat_1=lat_min+(lat_max-lat_min)/6; lat_2=lat_max-(lat_max-lat_min)/6", "lcc_bounds_source": FILE_PATHS["ground_truth_path"],
               "random_rejection": {"min_anchor_distance_unit_square": 0.05, "min_anchor_triangle_area_unit_square": 0.005}, "physics_variants": PHYSICS_VARIANTS,

@@ -64,6 +64,7 @@ python -m run_paper_script.paper_run ch6-visualize --model PhysicsSim --seed 0 -
 python -m run_paper_script.paper_run ch6-visualize --model SMACOF --no-wait
 python -m run_paper_script.paper_run ch6-visualize --model DC-SMACOF --no-wait
 python -m run_paper_script.paper_run ch6-representative --ablation-outdir outputs/ch5_ablation_lcc_sitebounds_alpha_1_beta_-0.5_100seeds --outdir outputs/ch6_representative_from_ablation_alpha_1_beta_-0.5_100seeds --no-wait
+python -m run_paper_script.paper_run ch6-progressive-representative --progressive-outdir outputs/ch5_progressive_as_physics_alpha_1_beta_-0.5_dc_alpha_-0.5_100seeds_random1000 --outdir outputs/ch6_progressive_representative --no-wait
 python -m run_paper_script.paper_run ch6-map
 """
 
@@ -118,6 +119,8 @@ def main() -> None:
         _as_mod("run_paper_script.ch6_interaction_map")
     elif cmd == "ch6-representative":
         _as_mod("run_paper_script.ch6_visualize_representative")
+    elif cmd == "ch6-progressive-representative":
+        _as_mod("run_paper_script.ch6_visualize_progressive_representative")
     else:
         raise SystemExit(f"Unknown command: {cmd}. Run with -h for usage.")
 

@@ -23,12 +23,17 @@ _MPLCONFIGDIR = Path(__file__).resolve().parents[1] / "outputs" / ".matplotlib_r
 _MPLCONFIGDIR.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", str(_MPLCONFIGDIR))
 
-import matplotlib
 import numpy as np
 import pandas as pd
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+def _get_plt():
+    """Load matplotlib only for figure exports."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    return plt
 
 from library.config import FILE_PATHS, Li2km
 from library.data_io import load_ini_data_from_csv
@@ -201,6 +206,7 @@ def _paired_comparisons(metrics: pd.DataFrame, metric_cols: Iterable[str]) -> pd
 
 
 def _plot_box(metrics: pd.DataFrame, metric: str, ylabel: str, outpath: Path) -> None:
+    plt = _get_plt()
     fig, ax = plt.subplots(figsize=(6, 4.5))
     groups = [metrics.loc[metrics["variant"] == variant, metric].to_numpy(float) for variant in (FULL, NO_REP)]
     ax.boxplot(groups, tick_labels=["Full", "NoRep"], showmeans=True)
@@ -212,6 +218,7 @@ def _plot_box(metrics: pd.DataFrame, metric: str, ylabel: str, outpath: Path) ->
 
 
 def _plot_scatter(metrics: pd.DataFrame, x_metric: str, y_metric: str, xlabel: str, ylabel: str, outpath: Path) -> None:
+    plt = _get_plt()
     fig, ax = plt.subplots(figsize=(6, 4.5))
     for variant, color in ((FULL, "#1f77b4"), (NO_REP, "#ff7f0e")):
         group = metrics[metrics["variant"] == variant]

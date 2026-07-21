@@ -1,10 +1,13 @@
 from copy import deepcopy
 import builtins
 
+import numpy as np
+
 from library.geometry import *
 from library.metrics import *
 from library.config import km2pix, km2Li, refer_pos, FILE_PATHS
-from library.data_io import uploading_ground_truth, uploading_directional_data, get_anchor_labels, get_anchor_align_label
+from library.data_io import uploading_ground_truth, uploading_directional_data, get_anchor_labels, get_anchor_align_label, load_ini_data_from_csv
+from library.directions import DIR8_UNIT_SIM
 from library.visualization import *
 from library.physics import *
 from library.initialization import *
@@ -17,19 +20,121 @@ from MDS_model.directed_mds_model import *
 from MDS_model.plot_node_link_diagram import *
 
 
-def _directional_data_to_dc_smacof_c_data(directional_data):
-    """Wrap verified direction rows in the legacy c_data shape used by DC-SMACOF."""
-    c_data = [[], [], [], []]
-    for row in directional_data:
+DC_SMACOF_DIRECTION_TARGET_RULE = "wang2017_current_pair_distance"
+DC_SMACOF_DIRECTION_PREPROCESSING = "vector_consensus_by_undirected_pair"
+DC_SMACOF_DIRECTION_EVALUATION_SOURCE = "raw_verified_observations"
+
+
+def _merge_dc_smacof_direction_observations(directional_data, dni, atol=1e-8):
+    """Merge repeated unordered pairs into one DIR8 constraint for DC-SMACOF."""
+    grouped = {}
+    for row_index, row in enumerate(directional_data):
         if len(row) < 3:
             raise ValueError(f"Directional row must have source, target, direction: {row!r}")
-        c_data[2].append([row[0], row[1], row[2]])
+
+        source, target, direction = row[0], row[1], row[2]
+        if not isinstance(source, str) or not source.strip():
+            raise ValueError(f"Directional row {row_index} has an empty source: {row!r}")
+        if not isinstance(target, str) or not target.strip():
+            raise ValueError(f"Directional row {row_index} has an empty target: {row!r}")
+        if source == target:
+            raise ValueError(f"Directional row {row_index} is a self-loop: {row!r}")
+        if source not in dni or target not in dni:
+            missing = [label for label in (source, target) if label not in dni]
+            raise ValueError(f"Directional row {row_index} contains unknown node(s) {missing}: {row!r}")
+        if direction not in DIR8_UNIT_SIM:
+            raise ValueError(f"Directional row {row_index} has invalid DIR8 direction: {row!r}")
+
+        if dni[source] < dni[target]:
+            canonical_source, canonical_target = source, target
+            canonical_vector = np.asarray(DIR8_UNIT_SIM[direction], dtype=float)
+        else:
+            canonical_source, canonical_target = target, source
+            canonical_vector = -np.asarray(DIR8_UNIT_SIM[direction], dtype=float)
+
+        key = (dni[canonical_source], dni[canonical_target])
+        entry = grouped.setdefault(
+            key,
+            {
+                "source": canonical_source,
+                "target": canonical_target,
+                "vectors": [],
+                "observations": [],
+            },
+        )
+        entry["vectors"].append(canonical_vector)
+        entry["observations"].append((source, target, direction))
+
+    merged_rows = []
+    provenance = []
+    direction_items = list(DIR8_UNIT_SIM.items())
+    for key in sorted(grouped):
+        entry = grouped[key]
+        vector_sum = np.sum(entry["vectors"], axis=0)
+        vector_norm = float(np.linalg.norm(vector_sum))
+        if vector_norm <= atol:
+            raise ValueError(
+                "DC-SMACOF direction observations cancel out for unordered pair "
+                f"{entry['source']!r}, {entry['target']!r}: {entry['observations']!r}"
+            )
+
+        consensus = vector_sum / vector_norm
+        matches = [
+            name
+            for name, unit in direction_items
+            if np.allclose(consensus, np.asarray(unit, dtype=float), rtol=0.0, atol=atol)
+        ]
+        if len(matches) != 1:
+            nearest_name, nearest_unit = builtins.min(
+                direction_items,
+                key=lambda item: float(np.linalg.norm(consensus - np.asarray(item[1], dtype=float))),
+            )
+            nearest_error = float(np.linalg.norm(consensus - np.asarray(nearest_unit, dtype=float)))
+            raise ValueError(
+                "DC-SMACOF direction consensus does not map exactly to DIR8 for unordered pair "
+                f"{entry['source']!r}, {entry['target']!r}; nearest={nearest_name!r}, "
+                f"error={nearest_error:.6g}, observations={entry['observations']!r}"
+            )
+
+        merged_direction = matches[0]
+        merged_rows.append([entry["source"], entry["target"], merged_direction])
+        provenance.append(
+            {
+                "effective_source": entry["source"],
+                "effective_target": entry["target"],
+                "effective_direction": merged_direction,
+                "n_observations": len(entry["observations"]),
+                "original_observations": list(entry["observations"]),
+            }
+        )
+
+    return merged_rows, provenance
+
+
+def get_dc_smacof_direction_method_metadata(directional_data, dni):
+    """Describe the direction inputs used for DC-SMACOF training and evaluation."""
+    merged_rows, provenance = _merge_dc_smacof_direction_observations(directional_data, dni)
+    metadata = {
+        "direction_target_rule": DC_SMACOF_DIRECTION_TARGET_RULE,
+        "direction_preprocessing": DC_SMACOF_DIRECTION_PREPROCESSING,
+        "raw_direction_observation_count": len(directional_data),
+        "effective_direction_constraint_count": len(merged_rows),
+        "direction_evaluation_source": DC_SMACOF_DIRECTION_EVALUATION_SOURCE,
+    }
+    return metadata, provenance
+
+
+def _directional_data_to_dc_smacof_c_data(directional_data, dni):
+    """Preprocess verified directions and wrap them in DC-SMACOF's legacy c_data."""
+    merged_rows, _ = _merge_dc_smacof_direction_observations(directional_data, dni)
+    c_data = [[], [], [], []]
+    c_data[2].extend(merged_rows)
     return c_data
 
 
 def run_directed_MDS( vis = True, w_weight_value = None, v_weight_value = None ):
-    c_data = _directional_data_to_dc_smacof_c_data(uploading_directional_data())
     graph, vertice, dni, edges, data = load_ini_data_from_csv(FILE_PATHS)
+    c_data = _directional_data_to_dc_smacof_c_data(uploading_directional_data(), dni)
     pos_matrix, stress_history, pos_history = directed_MDS(
         c_data,
         data,

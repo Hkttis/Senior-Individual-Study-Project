@@ -1,0 +1,17 @@
+# Python environments and caches
+.venv/
+.venv_codex/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local tooling and temporary files
+.matplotlib/
+.vscode/
+tmp/
+
+# Generated experiment artifacts
+outputs/
+results_data/
+backups/
+paper_results/

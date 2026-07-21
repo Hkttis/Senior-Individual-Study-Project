@@ -149,7 +149,18 @@ def plot_stress_convergence_log(stress_history, file_name):
                 running = False
     pygame.quit()
 
-def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction_lists, zoom_area =None , file_name = None, wait=True):
+def visualize_error_map_official(
+    pos_matrix,
+    vertice,
+    dni,
+    data,
+    wrong_direction_lists,
+    zoom_area=None,
+    file_name=None,
+    wait=True,
+    output_dir=None,
+    title=None,
+):
     """
     Official version for visualizing node error maps with scaled error color,
     top-5 error labels, and a color legend. Suitable for publication or reports.
@@ -333,11 +344,11 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
 
     _model_name = file_name.rstrip("_").split("_seed")[0] if file_name else "Model"
     title_font = pygame.font.SysFont("Microsoft YaHei", 26)
-    title_surf = title_font.render(f"Error Map: {_model_name}", True, (0, 0, 0))
+    title_surf = title_font.render(title or f"Error Map: {_model_name}", True, (0, 0, 0))
     screen.blit(title_surf, (width // 2 - title_surf.get_width() // 2, 10))
     
     # === Save image to specific folder with name based on zoom_area ===
-    save_dir = str(OUTPUT_DIR)
+    save_dir = str(output_dir or OUTPUT_DIR)
     os.makedirs(save_dir, exist_ok=True)
 
     if zoom_area:
@@ -364,11 +375,25 @@ def visualize_error_map_official(pos_matrix, vertice, dni, data, wrong_direction
     
     return errors, edge_labels
 
-def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_pos, pos_matrix, file_name, wait=True):
+def ground_truth_comparison(
+    vertice,
+    dni,
+    data,
+    ground_truth_positions,
+    refer_pos,
+    pos_matrix,
+    file_name,
+    wait=True,
+    *,
+    eval_labels=None,
+    output_dir=None,
+    title=None,
+):
     """
     1) Convert pos_matrix (pixels) to km relative to refer_pos (鄯善 at 0,0).
     2) Project ground-truth lon/lat with LCC to km.
-    3) Compute per-node errors & RMSE.
+    3) Compute per-node errors & RMSE. When ``eval_labels`` is supplied,
+       only those labels contribute to the displayed RMSE and error connectors.
     4) Pygame overlay:
        - base = ground truth nodes (light gray) + light gray labels
        - overlay = simulated nodes (colored by error) + labels
@@ -383,8 +408,19 @@ def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_po
     gt_xy_km = flipping_gt(gt_xy_km)
 
     # --- 3) Errors / RMSE (km) ---
+    if eval_labels is None:
+        evaluation_indices = list(range(len(vertice)))
+        rmse_label = "RMSE"
+    else:
+        missing = [label for label in eval_labels if label not in dni]
+        if missing:
+            raise KeyError(f"Unknown evaluation labels: {missing}")
+        evaluation_indices = [dni[label] for label in eval_labels]
+        rmse_label = "Test RMSE"
+
     errors, valid_idx = [], []
-    for i, (sx, sy) in enumerate(sim_xy_km):
+    for i in evaluation_indices:
+        sx, sy = sim_xy_km[i]
         gx, gy = gt_xy_km[i]
         if gx is None:
             continue
@@ -399,10 +435,10 @@ def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_po
     screen = pygame.display.set_mode((width, height))
 
     _model_name = file_name.rstrip("_").split("_seed")[0] if file_name else "Model"
-    _title_str = f"Overlay: {_model_name} vs Reference Map"
+    _title_str = title or f"Overlay: {_model_name} vs Reference Map"
     pygame.display.set_caption(_title_str)
     font = pygame.font.SysFont("Microsoft YaHei", 20)
-    big_font = pygame.font.SysFont("Microsoft YaHei", 30)
+    big_font = pygame.font.SysFont("Microsoft YaHei", 24)
     screen.fill((255, 255, 255))
 
     title_surf = big_font.render(_title_str, True, (0, 0, 0))
@@ -513,22 +549,27 @@ def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_po
     screen.blit(font.render(f"{max_error:.2f}", True, (0, 0, 0)), (bx - 80, by - 10))
     screen.blit(font.render("Error (km)", True, (0, 0, 0)), (bx - 100, by - 40))
 
-    rmse_surf = font.render(f"RMSE = {rmse:.3f} km", True, (0, 0, 0))
-    screen.blit(rmse_surf, (width - rmse_surf.get_width() - 20, 30))
+    rmse_surf = font.render(f"{rmse_label} = {rmse:.3f} km", True, (0, 0, 0))
+    screen.blit(rmse_surf, (width - rmse_surf.get_width() - 20, 65))
 
     kruskal_stress = calculate_kruskals_stress(dni, pos_matrix_pix2km(deepcopy(pos_matrix)), data)
     kru_surf = font.render(f"stress = {kruskal_stress:.4f}", True, (0, 0, 0))
-    screen.blit(kru_surf, (width - kru_surf.get_width() - 20, 80))
+    screen.blit(kru_surf, (width - kru_surf.get_width() - 20, 100))
 
     # --- 9) Save & wait ---
     pygame.display.flip()
-    save_path = os.path.join(str(OUTPUT_DIR), f"{file_name}Overlap.png")
+    save_path = os.path.join(str(output_dir or OUTPUT_DIR), f"{file_name}Overlap.png")
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     pygame.image.save(screen, save_path)
 
     if not wait:
         pygame.quit()
-        return
+        return {
+            "rmse_km": float(rmse),
+            "n_evaluated": int(len(errors)),
+            "eval_labels": [vertice[i] for i in valid_idx],
+            "save_path": save_path,
+        }
 
     running = True
     while running:
@@ -536,6 +577,12 @@ def ground_truth_comparison(vertice, dni, data, ground_truth_positions, refer_po
             if e.type == pygame.QUIT:
                 running = False
     pygame.quit()
+    return {
+        "rmse_km": float(rmse),
+        "n_evaluated": int(len(errors)),
+        "eval_labels": [vertice[i] for i in valid_idx],
+        "save_path": save_path,
+    }
 
 
 def plot_three_model_convergence_pygame_pixelaware(

@@ -15,7 +15,8 @@ from library.directions import DIR8_UNIT_SIM as unit_direction_dict
 # configuration
 fix_weight = 1  # weight of fixed points is 10000, let it be fixed because it wanna fit the dij
 w_weight = 1
-v_weight = 0.05
+# Default selected by the DC-SMACOF HPO manual Pareto review: alpha = -0.5.
+v_weight = 0.31622776601683794
 stop_iteration_times = 1000
 
 
@@ -61,10 +62,16 @@ def filter(n,X,vertice,dni) :
 def revise_direction(sel_data) :
     direction_dictionary = ['東南','西北','東北','西南','北','東','南','西']
     for i in range(len(sel_data)) :
+        if len(sel_data[i]) >= 3 and sel_data[i][2] in unit_direction_dict:
+            continue
+        if len(sel_data[i]) <= 5:
+            raise ValueError(f"Directional row does not contain a valid DIR8 direction: {sel_data[i]!r}")
         for j in range(8) :
             if direction_dictionary[j] in sel_data[i][5] :
                 sel_data[i][2] = direction_dictionary[j]
                 break
+        if sel_data[i][2] not in unit_direction_dict:
+            raise ValueError(f"Directional row does not contain a valid DIR8 direction: {sel_data[i]!r}")
     return sel_data
 def avg_dis(dis):
     sum = 0
@@ -76,14 +83,16 @@ def avg_dis(dis):
                 cnt = cnt + 1
     return sum/cnt
 
-def compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,in_dis_flag,in_direct_flag,fixed_points_flag) :
+def compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,in_dis_flag,in_direct_flag,fixed_points_flag,distance_weight=None,direction_weight=None) :
+    distance_weight = w_weight if distance_weight is None else float(distance_weight)
+    direction_weight = v_weight if direction_weight is None else float(direction_weight)
     weight = [[0 for i in range(n)] for j in range(n)]
     for ver in graph :
         for row in ver :
             if dis[dni[row[0]]][dni[row[1]]] == 0 :
                 print("Warning : distance_error")
-            weight[dni[row[0]]][dni[row[1]]] = w_weight / (dis[dni[row[0]]][dni[row[1]]]**2)
-            weight[dni[row[1]]][dni[row[0]]] = w_weight / (dis[dni[row[0]]][dni[row[1]]]**2)
+            weight[dni[row[0]]][dni[row[1]]] = distance_weight / (dis[dni[row[0]]][dni[row[1]]]**2)
+            weight[dni[row[1]]][dni[row[0]]] = distance_weight / (dis[dni[row[0]]][dni[row[1]]]**2)
             if fixed_points_flag[dni[row[0]]]==1 and fixed_points_flag[dni[row[1]]] ==1 :
                 weight[dni[row[0]]][dni[row[1]]] = fix_weight
                 weight[dni[row[1]]][dni[row[0]]] = fix_weight
@@ -103,11 +112,11 @@ def compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,d
     veight = [[0 for i in range(n)] for j in range(n)]
     for row in sel_data :
         if dis[dni[row[0]]][dni[row[1]]] != 0 :
-            veight[dni[row[0]]][dni[row[1]]] = v_weight / (dis[dni[row[0]]][dni[row[1]]]**2)
-            veight[dni[row[1]]][dni[row[0]]] = v_weight / (dis[dni[row[0]]][dni[row[1]]]**2)
+            veight[dni[row[0]]][dni[row[1]]] = direction_weight / (dis[dni[row[0]]][dni[row[1]]]**2)
+            veight[dni[row[1]]][dni[row[0]]] = direction_weight / (dis[dni[row[0]]][dni[row[1]]]**2)
         else :
-            veight[dni[row[0]]][dni[row[1]]] = v_weight / (avg_dis(dis)**2)
-            veight[dni[row[1]]][dni[row[0]]] = v_weight / (avg_dis(dis)**2)
+            veight[dni[row[0]]][dni[row[1]]] = direction_weight / (avg_dis(dis)**2)
+            veight[dni[row[1]]][dni[row[0]]] = direction_weight / (avg_dis(dis)**2)
     # like weight , add into veight as same as 
     LV = [[0 for i in range(n)] for j in range(n)]
     for i in range(n) :
@@ -160,17 +169,17 @@ def compute_DW_DV(n,s,m,t,X,sel_data,graph,vertice,dni,edges,dis,fixed_points_fl
             DW[cnt] = dis[i][j]*unit
             cnt += 1
     
-    avg_d = avg_dis(dis)   # 預算平均距離，作為 dis==0 時的 fallback
-    
     DV = numpy.zeros((t,2))
     for i in range(t) :
         x = dni[sel_data[i][0]]
         y = dni[sel_data[i][1]]
+        current_distance = linalg.norm(X[y]-X[x])
         unit = numpy.array(unit_direction_dict[sel_data[i][2]])
-        if dis[x][y] != 0 :
-            DV[i] = -(dis[x][y]*unit)
-        else :
-            DV[i] = -(avg_d*unit)   # 用平均距離取代 current_dist，有上界不會爆
+        if current_distance > 1e-12 :
+            # JV uses +source/-target, so D stores source-target = -distance*u.
+            DV[i] = -(current_distance*unit)
+        else:
+            DV[i] = numpy.zeros(2)
     
     return DW,DV
 def stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis) : # weigh in km**2
@@ -200,9 +209,12 @@ def stress(n,s,m,t,X,weight,veight,in_direct_flag,dni,edges,sel_data,dis) : # we
         x = dni[sel_data[i][0]]
         y = dni[sel_data[i][1]]
         v = X[y]-X[x]
-        unitx = v/linalg.norm(v)
+        current_distance = linalg.norm(v)
+        if current_distance <= 1e-12 :
+            continue
+        unitx = v/current_distance
         unitdata = numpy.array(unit_direction_dict[sel_data[i][2]])
-        stressv = stressv + veight[x][y]*(( linalg.norm(v)*linalg.norm(unitx-unitdata) )**2)
+        stressv = stressv + veight[x][y]*(( current_distance*linalg.norm(unitx-unitdata) )**2)
         #stressv = stressv + veight[x][y]*((linalg.norm(v)*(numpy.dot(unitx,unitdata)-1))**2)
     return stressw + stressv
 def iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_direct_flag,inipos,weight,LW,veight,LV,JW,JV) :
@@ -239,7 +251,7 @@ def iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_di
         Z = X
         pos_history.append(deepcopy(Z))
     return Z, stress_history, pos_history
-def directed_MDS(c_data,data,graph,vertice,dni,edges) : # c_data is from data_process, which [0,2] contain directed data
+def directed_MDS(c_data,data,graph,vertice,dni,edges,distance_weight=None,direction_weight=None) : # c_data is from data_process, which [0,2] contain directed data
     n = len(vertice) # the number of points             # data~edges are from Chen~_method
     s = len(edges) # the number of the points' edges
     # FIXME : adding the dis between fixed points into data
@@ -255,7 +267,7 @@ def directed_MDS(c_data,data,graph,vertice,dni,edges) : # c_data is from data_pr
             dis[dni[row[1]]][dni[row[0]]] = int(row[-1])
     # n is number of all nodes, s is number of all distance edges
     # m is number of nodes with directional edges (E'), t is the number of directional edges
-    weight,LW,veight,LV,JW,JV = compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,in_dis_flag,in_direct_flag,fixed_points_flag)
+    weight,LW,veight,LV,JW,JV = compute_weight_LW_veight_LV_JW_JV(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,in_dis_flag,in_direct_flag,fixed_points_flag,distance_weight=distance_weight,direction_weight=direction_weight)
     anspos, stress_history, pos_history = iterate(n,s,m,t,sel_data,graph,vertice,dni,edges,dis,fixed_points_flag,in_direct_flag,inipos,weight,LW,veight,LV,JW,JV)
     
     return anspos, stress_history, pos_history

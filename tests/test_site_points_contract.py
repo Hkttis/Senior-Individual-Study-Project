@@ -1,3 +1,5 @@
+import pytest
+
 from library.config import FILE_PATHS
 from library.data_io import (
     get_anchor_align_label,
@@ -27,11 +29,22 @@ def test_site_points_exist_in_distance_data_and_upload_ground_truth():
         assert positions[dni[site]] != [0, 0]
 
 
-def test_default_frame_anchor_falls_back_to_first_anchor():
-    anchors = get_anchor_labels()
+def test_explicit_anchor_align_is_used_as_frame_anchor():
+    assert get_default_frame_anchor_label() == "鄯善"
+    assert get_anchor_align_label() == "鄯善"
 
-    assert get_default_frame_anchor_label() == anchors[0]
-    assert get_anchor_align_label() == get_default_frame_anchor_label()
+
+def test_procrustes_requires_explicit_frame_anchor():
+    from library.metrics import procrustes_align_by_fixed_points
+
+    with pytest.raises(ValueError, match="must be explicitly included"):
+        procrustes_align_by_fixed_points(
+            [[0.0, 0.0]],
+            [],
+            [],
+            {"鄯善": 0},
+            anchor_label="鄯善",
+        )
 
 
 def test_ground_truth_path_uses_project_data_file():
