@@ -6,7 +6,7 @@ anchor sites, and builds a Pareto front over stress, VR, and RMSE_anc.
 
 Usage
 -----
-python -m run_paper_script.paper_run ch5-dc-hparam --seeds 0,1,2,3,4,5,6,7,8,9 --alpha-min -2 --alpha-max 0 --alpha-step 0.5 --outdir outputs/ch5_dc_smacof_hparam_alpha_-2_0_seed0_9
+python -m run_paper_script.paper_run ch5-dc-hparam --seeds 0,1,2,3,4,5,6,7,8,9 --alpha-min -4 --alpha-max 0 --alpha-step 0.5 --outdir outputs/ch5_dc_smacof_hparam_wang_current_alpha_-4_0_seed0_9_20260721
 """
 
 from __future__ import annotations

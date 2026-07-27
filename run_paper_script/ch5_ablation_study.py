@@ -143,7 +143,7 @@ def _load_selected_dc_smacof_params(
         }
 
     if not dc_hpo_outdir:
-        default_alpha = -0.5
+        default_alpha = -2.0
         w_weight_value, v_weight_value = _dc_smacof_weights_from_alpha(default_alpha)
         return {
             "source": "default_selected_alpha",

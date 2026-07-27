@@ -7,6 +7,7 @@ progressive AS pipeline. It does not rerun models or modify experiment outputs.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,12 @@ from run_paper_script.ch5_ablation_progressive import _target_positions_sim
 
 
 DEFAULT_VARIANTS = ("PhysicsSim-Full", "SMACOF", "DC-SMACOF")
+DEFAULT_PROGRESSIVE_OUTDIR = (
+    "outputs/ch5_progressive_as_physics_alpha_1_beta_-0.5_"
+    "dc_alpha_-2_wang_current_100seeds_random1000_20260721"
+)
+DEFAULT_REPRESENTATIVE_DIR = "outputs/ch6_section_6_5_full_smacof_dc_representative_wang_current_20260722"
+DEFAULT_OUTDIR = "outputs/ch6_section_6_5_visual_wang_current_20260722"
 DISPLAY_NAMES = {
     "PhysicsSim-Full": "PhysicsSim-Full",
     "SMACOF": "SMACOF",
@@ -63,6 +70,10 @@ NODE_HANDLES = [
 ]
 
 
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+
+
 def _cjk_font(size: float) -> FontProperties:
     for path in (
         Path(r"C:\Windows\Fonts\msyh.ttc"),
@@ -78,16 +89,16 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--progressive-outdir",
-        default="outputs/ch5_progressive_as_physics_alpha_1_beta_-0.5_dc_alpha_-0.5_100seeds_random1000",
+        default=DEFAULT_PROGRESSIVE_OUTDIR,
     )
     parser.add_argument(
         "--representative-dir",
-        default="outputs/ch6_section_6_5_full_smacof_dc_representative",
+        default=DEFAULT_REPRESENTATIVE_DIR,
         help="Directory containing representative_selection.json from verified ch6 visualizations.",
     )
     parser.add_argument(
         "--outdir",
-        default="outputs/ch6_section_6_5_visual_prototype",
+        default=DEFAULT_OUTDIR,
     )
     parser.add_argument(
         "--variants",
@@ -535,7 +546,20 @@ def main() -> None:
     progressive_outdir = Path(args.progressive_outdir)
     representative_dir = Path(args.representative_dir)
     outdir = Path(args.outdir)
+    if outdir.exists() and any(outdir.iterdir()):
+        raise FileExistsError(f"Output directory is not empty: {outdir}")
     outdir.mkdir(parents=True, exist_ok=True)
+
+    source_files = [
+        progressive_outdir / "progressive_config.json",
+        progressive_outdir / "progressive_runs_by_seed.csv",
+        progressive_outdir / "progressive_final_positions_y_up_sim.csv",
+        representative_dir / "representative_selection.json",
+        representative_dir / "representative_rerun_verification.csv",
+    ]
+    missing_sources = [str(path) for path in source_files if not path.exists()]
+    if missing_sources:
+        raise FileNotFoundError(f"Missing visualization source files: {missing_sources}")
 
     variants = [value.strip() for value in args.variants.split(",") if value.strip()]
     records = _load_selected_records(representative_dir, variants)
@@ -600,7 +624,6 @@ def main() -> None:
             pad=8,
             linespacing=1.25,
         )
-        axes[1, col].set_title(_panel_label_text(error_panel_labels[col], variant), fontsize=14, fontweight="bold", pad=8)
         for row, extent in [(0, overlay_extent), (1, map_extent)]:
             ax = axes[row, col]
             _style_axis(ax, extent)
@@ -623,6 +646,22 @@ def main() -> None:
     cbar2 = fig.colorbar(sm_edge, ax=axes[1, :], orientation="vertical", fraction=0.010, pad=0.006)
     cbar2.set_label("Distance-edge relative error", fontsize=9)
     cbar2.ax.tick_params(labelsize=8)
+
+    # Equal-aspect panels can have different axes-box heights. Anchor the
+    # lower-row titles to one figure-level y coordinate so they stay aligned.
+    fig.canvas.draw()
+    lower_positions = [axes[1, col].get_position() for col in range(len(records))]
+    lower_title_y = max(position.y1 for position in lower_positions) + 0.008
+    for position, letter, record in zip(lower_positions, error_panel_labels, records):
+        fig.text(
+            position.x0 + position.width / 2.0,
+            lower_title_y,
+            _panel_label_text(letter, record["variant"]),
+            ha="center",
+            va="bottom",
+            fontsize=14,
+            fontweight="bold",
+        )
 
     png_path = outdir / "section_6_5_three_model_visualization_prototype.png"
     svg_path = outdir / "section_6_5_three_model_visualization_prototype.svg"
@@ -660,6 +699,7 @@ def main() -> None:
     metadata = {
         "source_progressive_as": str(progressive_outdir),
         "source_representative_dir": str(representative_dir),
+        "source_sha256": {path.name: _sha256(path) for path in source_files},
         "variants": variants,
         "seeds": {record["variant"]: int(record["seed"]) for record in records},
         "metrics": {record["variant"]: record["rerun_metrics"] for record in records},

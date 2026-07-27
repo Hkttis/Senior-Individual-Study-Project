@@ -36,35 +36,37 @@ Formal HPO grid:
 python -m run_paper_script.paper_run ch5-hparam-kfold --seeds 0,1,2,3,4,5,6,7,8,9 --alpha-min -1 --alpha-max 1.5 --alpha-step 0.5 --beta-min -2 --beta-max 0.5 --beta-step 0.5 --outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10
 
 DC-SMACOF HPO grid:
-python -m run_paper_script.paper_run ch5-dc-hparam --seeds 0,1,2,3,4,5,6,7,8,9 --alpha-min -2 --alpha-max 0 --alpha-step 0.5 --outdir outputs/ch5_dc_smacof_hparam_alpha_-2_0_seed0_9
+python -m run_paper_script.paper_run ch5-dc-hparam --seeds 0,1,2,3,4,5,6,7,8,9 --alpha-min -4 --alpha-max 0 --alpha-step 0.5 --outdir outputs/ch5_dc_smacof_hparam_wang_current_alpha_-4_0_seed0_9_20260721
 
 DC-SMACOF HPO candidate position review:
-python -m run_paper_script.paper_run ch5-dc-review --hpo-outdir outputs/ch5_dc_smacof_hparam_alpha_-2_0_seed0_9 --outdir outputs/ch5_dc_smacof_hparam_alpha_-2_0_seed0_9_review
+python -m run_paper_script.paper_run ch5-dc-review --hpo-outdir outputs/ch5_dc_smacof_hparam_wang_current_alpha_-4_0_seed0_9_20260721 --outdir outputs/ch5_dc_smacof_hparam_wang_current_alpha_-4_0_seed0_9_20260721_review
 
 Manual candidate selection after HPO, one-SE balanced choice alpha=1 beta=-0.5:
 python -m scripts.select_hpo_candidate --source-hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10 --alpha 1 --beta -0.5 --outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_manual_alpha_1_beta_-0.5
 
 Ablation smoke test from selected HPO:
-python -m run_paper_script.paper_run ch5-ablation --hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_manual_alpha_1_beta_-0.5 --dc-hpo-outdir outputs/ch5_dc_smacof_hparam_alpha_-2_0_seed0_9 --seeds 0 --outdir outputs/ch5_ablation_lcc_sitebounds_smoke
+python -m run_paper_script.paper_run ch5-ablation --hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_manual_alpha_1_beta_-0.5 --dc-hpo-outdir outputs/ch5_dc_smacof_hparam_wang_current_alpha_-4_0_seed0_9_20260721 --seeds 0 --outdir outputs/ch5_ablation_lcc_sitebounds_dc_alpha_-2_smoke
 
 If the DC-SMACOF Pareto front is small and you choose manually, pass --dc-alpha:
-python -m run_paper_script.paper_run ch5-ablation --hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_manual_alpha_1_beta_-0.5 --dc-alpha -1.5 --seeds 0 --outdir outputs/ch5_ablation_lcc_sitebounds_smoke
+python -m run_paper_script.paper_run ch5-ablation --hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_manual_alpha_1_beta_-0.5 --dc-alpha -2 --seeds 0 --outdir outputs/ch5_ablation_lcc_sitebounds_dc_alpha_-2_smoke
 
 Formal ablation, 100 seeds:
-python -m run_paper_script.paper_run ch5-ablation --hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_manual_alpha_1_beta_-0.5 --dc-hpo-outdir outputs/ch5_dc_smacof_hparam_alpha_-2_0_seed0_9 --seeds 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99 --outdir outputs/ch5_ablation_lcc_sitebounds_alpha_1_beta_-0.5_100seeds
+python -m run_paper_script.paper_run ch5-ablation --hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_manual_alpha_1_beta_-0.5 --dc-hpo-outdir outputs/ch5_dc_smacof_hparam_wang_current_alpha_-4_0_seed0_9_20260721 --seeds 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99 --outdir outputs/ch5_ablation_lcc_sitebounds_physics_alpha_1_beta_-0.5_dc_alpha_-2_100seeds
 
 Progressive AS smoke test (2 model seeds, 10 Random+Align runs):
-python -m run_paper_script.paper_run ch5-ablation-progressive --hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_run2_manual_alpha_1_beta_-0.5 --dc-hpo-outdir outputs/ch5_dc_smacof_hparam_alpha_-2_0_seed0_9 --seeds 0,1 --random-runs 10 --outdir outputs/progressive_as_smoke_seed0_1_random10
+python -m run_paper_script.paper_run ch5-ablation-progressive --hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_run2_manual_alpha_1_beta_-0.5 --dc-hpo-outdir outputs/ch5_dc_smacof_hparam_wang_current_alpha_-4_0_seed0_9_20260721 --seeds 0,1 --random-runs 10 --outdir outputs/progressive_as_dc_alpha_-2_smoke_seed0_1_random10
 
 Progressive AS formal run (100 model seeds, 1000 Random+Align runs):
-python -m run_paper_script.paper_run ch5-ablation-progressive --hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_run2_manual_alpha_1_beta_-0.5 --dc-hpo-outdir outputs/ch5_dc_smacof_hparam_alpha_-2_0_seed0_9 --seeds 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99 --random-runs 1000 --outdir outputs/ch5_progressive_as_alpha_1_beta_-0.5_100seeds
+python -m run_paper_script.paper_run ch5-ablation-progressive --hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_run2_manual_alpha_1_beta_-0.5 --dc-hpo-outdir outputs/ch5_dc_smacof_hparam_wang_current_alpha_-4_0_seed0_9_20260721 --seeds 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99 --random-runs 1000 --outdir outputs/ch5_progressive_as_physics_alpha_1_beta_-0.5_dc_alpha_-2_wang_current_100seeds_random1000_20260721
 
 Chapter 6 examples:
 python -m run_paper_script.paper_run ch6-visualize --model PhysicsSim --seed 0 --no-wait
 python -m run_paper_script.paper_run ch6-visualize --model SMACOF --no-wait
 python -m run_paper_script.paper_run ch6-visualize --model DC-SMACOF --no-wait
 python -m run_paper_script.paper_run ch6-representative --ablation-outdir outputs/ch5_ablation_lcc_sitebounds_alpha_1_beta_-0.5_100seeds --outdir outputs/ch6_representative_from_ablation_alpha_1_beta_-0.5_100seeds --no-wait
-python -m run_paper_script.paper_run ch6-progressive-representative --progressive-outdir outputs/ch5_progressive_as_physics_alpha_1_beta_-0.5_dc_alpha_-0.5_100seeds_random1000 --outdir outputs/ch6_progressive_representative --no-wait
+python -m run_paper_script.paper_run ch6-progressive-representative --progressive-outdir outputs/ch5_progressive_as_physics_alpha_1_beta_-0.5_dc_alpha_-2_wang_current_100seeds_random1000_20260721 --outdir outputs/ch6_section_6_5_full_smacof_dc_representative_wang_current_20260722 --variants PhysicsSim-Full,SMACOF,DC-SMACOF --no-wait
+python -m scripts.create_section_6_5_visual_prototype --progressive-outdir outputs/ch5_progressive_as_physics_alpha_1_beta_-0.5_dc_alpha_-2_wang_current_100seeds_random1000_20260721 --representative-dir outputs/ch6_section_6_5_full_smacof_dc_representative_wang_current_20260722 --outdir outputs/ch6_section_6_5_visual_wang_current_20260722 --variants PhysicsSim-Full,SMACOF,DC-SMACOF
+python -m scripts.verify_section_6_5_visualizations --as-outdir outputs/ch5_progressive_as_physics_alpha_1_beta_-0.5_dc_alpha_-2_wang_current_100seeds_random1000_20260721 --representative-dir outputs/ch6_section_6_5_full_smacof_dc_representative_wang_current_20260722 --vis-dir outputs/ch6_section_6_5_visual_wang_current_20260722 --expected-variants PhysicsSim-Full,SMACOF,DC-SMACOF
 python -m run_paper_script.paper_run ch6-map
 """
 

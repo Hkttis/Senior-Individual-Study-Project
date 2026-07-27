@@ -5,7 +5,7 @@ representative seed for each alpha candidate, and exports position plots.
 
 Usage
 -----
-python -m run_paper_script.paper_run ch5-dc-review --hpo-outdir outputs/ch5_dc_smacof_hparam_alpha_-2_0_seed0_9 --outdir outputs/ch5_dc_smacof_hparam_alpha_-2_0_seed0_9_review
+python -m run_paper_script.paper_run ch5-dc-review --hpo-outdir outputs/ch5_dc_smacof_hparam_wang_current_alpha_-4_0_seed0_9_20260721 --outdir outputs/ch5_dc_smacof_hparam_wang_current_alpha_-4_0_seed0_9_20260721_review
 """
 
 from __future__ import annotations

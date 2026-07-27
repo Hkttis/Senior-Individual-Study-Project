@@ -8,6 +8,7 @@ final positions, then exports an error map and a test-only ground-truth overlay.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -47,18 +48,27 @@ DEFAULT_VARIANTS = (
     "SMACOF",
     "DC-SMACOF",
 )
+DEFAULT_PROGRESSIVE_OUTDIR = (
+    "outputs/ch5_progressive_as_physics_alpha_1_beta_-0.5_"
+    "dc_alpha_-2_wang_current_100seeds_random1000_20260721"
+)
+DEFAULT_OUTDIR = "outputs/ch6_section_6_5_full_smacof_dc_representative_wang_current_20260722"
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--progressive-outdir",
-        default="outputs/ch5_progressive_as_physics_alpha_1_beta_-0.5_dc_alpha_-0.5_100seeds_random1000",
+        default=DEFAULT_PROGRESSIVE_OUTDIR,
         help="Formal progressive AS output directory.",
     )
     parser.add_argument(
         "--outdir",
-        default="outputs/ch6_progressive_representative",
+        default=DEFAULT_OUTDIR,
         help="New directory for representative figures and verification records.",
     )
     parser.add_argument(
@@ -276,8 +286,21 @@ def main():
         selections.append(selection)
 
     pd.DataFrame(verification_rows).to_csv(outdir / "representative_rerun_verification.csv", index=False, encoding="utf-8-sig")
+    source_sha256 = {
+        path.name: _sha256(path)
+        for path in (config_path, runs_path, positions_path)
+    }
     (outdir / "representative_selection.json").write_text(
-        json.dumps({"source_progressive_as": str(as_outdir), "selections": selections}, ensure_ascii=False, indent=2),
+        json.dumps(
+            {
+                "source_progressive_as": str(as_outdir),
+                "source_sha256": source_sha256,
+                "selection_metrics": list(SELECTION_METRICS),
+                "selections": selections,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
     print(f"[Saved] {outdir / 'representative_selection.json'}")

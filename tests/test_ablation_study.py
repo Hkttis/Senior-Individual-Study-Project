@@ -256,6 +256,15 @@ def test_load_selected_dc_smacof_params_manual_alpha():
     assert params["v_weight"] == pytest.approx(0.01)
 
 
+def test_load_selected_dc_smacof_params_default_matches_final_hpo():
+    params = _load_selected_dc_smacof_params()
+
+    assert params["source"] == "default_selected_alpha"
+    assert params["alpha"] == pytest.approx(-2.0)
+    assert params["w_weight"] == pytest.approx(1.0)
+    assert params["v_weight"] == pytest.approx(0.01)
+
+
 def test_ch6_representative_rerun_uses_ablation_dc_weights(monkeypatch):
     captured = {}
 

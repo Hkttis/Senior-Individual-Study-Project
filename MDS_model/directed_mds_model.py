@@ -15,8 +15,8 @@ from library.directions import DIR8_UNIT_SIM as unit_direction_dict
 # configuration
 fix_weight = 1  # weight of fixed points is 10000, let it be fixed because it wanna fit the dij
 w_weight = 1
-# Default selected by the DC-SMACOF HPO manual Pareto review: alpha = -0.5.
-v_weight = 0.31622776601683794
+# Final DC-SMACOF HPO selection: alpha = log10(v_weight / w_weight) = -2.
+v_weight = 0.01
 stop_iteration_times = 1000
 
 

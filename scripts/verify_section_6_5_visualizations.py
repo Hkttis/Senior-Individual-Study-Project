@@ -13,7 +13,9 @@ import csv
 import hashlib
 import json
 import shutil
+import struct
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
@@ -42,9 +44,15 @@ from scripts.create_section_6_5_visual_prototype import (
 )
 
 
-DEFAULT_AS_OUTDIR = PROJECT_ROOT / "outputs" / "ch5_progressive_as_physics_alpha_1_beta_-0.5_dc_alpha_-0.5_100seeds_random1000"
-DEFAULT_REPRESENTATIVE_DIR = PROJECT_ROOT / "outputs" / "ch6_section_6_5_full_smacof_dc_representative"
-DEFAULT_VIS_DIR = PROJECT_ROOT / "outputs" / "ch6_section_6_5_visual_prototype"
+DEFAULT_AS_OUTDIR = (
+    PROJECT_ROOT
+    / "outputs"
+    / "ch5_progressive_as_physics_alpha_1_beta_-0.5_dc_alpha_-2_wang_current_100seeds_random1000_20260721"
+)
+DEFAULT_REPRESENTATIVE_DIR = (
+    PROJECT_ROOT / "outputs" / "ch6_section_6_5_full_smacof_dc_representative_wang_current_20260722"
+)
+DEFAULT_VIS_DIR = PROJECT_ROOT / "outputs" / "ch6_section_6_5_visual_wang_current_20260722"
 DEFAULT_PAPER_RESULTS = PROJECT_ROOT / "paper_results" / "current"
 
 CORE_METRICS = ("RMSE_test_km", "E_distance_stress", "E_direction_vr", "E_direction_mae")
@@ -81,6 +89,46 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _verify_source_hashes(metadata: dict, sources: list[Path], label: str, failures: list[str]) -> None:
+    recorded = metadata.get("source_sha256")
+    if not isinstance(recorded, dict):
+        failures.append(f"{label} metadata has no source_sha256 mapping")
+        return
+    for path in sources:
+        expected = recorded.get(path.name)
+        if expected is None:
+            failures.append(f"{label} metadata has no SHA-256 for {path.name}")
+        elif not path.exists():
+            failures.append(f"{label} source file is missing: {path}")
+        elif str(expected).upper() != _sha256(path):
+            failures.append(f"{label} source SHA-256 mismatch: {path.name}")
+
+
+def _verify_visual_file(path: Path, failures: list[str]) -> None:
+    if not path.exists():
+        failures.append(f"missing visualization output: {path}")
+        return
+    if path.stat().st_size <= 0:
+        failures.append(f"empty visualization output: {path}")
+        return
+    if path.suffix.lower() == ".svg":
+        try:
+            root = ET.parse(path).getroot()
+        except ET.ParseError as exc:
+            failures.append(f"invalid SVG XML: {path}: {exc}")
+            return
+        if not root.tag.lower().endswith("svg"):
+            failures.append(f"SVG root element is invalid: {path}")
+    elif path.suffix.lower() == ".png":
+        data = path.read_bytes()[:24]
+        if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n":
+            failures.append(f"invalid PNG signature: {path}")
+            return
+        width, height = struct.unpack(">II", data[16:24])
+        if width <= 0 or height <= 0:
+            failures.append(f"invalid PNG dimensions: {path}")
+
+
 def _verify_sources(as_outdir: Path, representative_dir: Path, vis_dir: Path, failures: list[str]) -> tuple[dict, dict]:
     vis_meta = _load_json(vis_dir / "section_6_5_three_model_visualization_prototype.json")
     rep_meta = _load_json(representative_dir / "representative_selection.json")
@@ -90,12 +138,19 @@ def _verify_sources(as_outdir: Path, representative_dir: Path, vis_dir: Path, fa
         failures.append("visualization metadata source_representative_dir does not match --representative-dir")
     if _norm_path(rep_meta["source_progressive_as"]) != as_outdir.resolve():
         failures.append("representative metadata source_progressive_as does not match --as-outdir")
+    as_sources = [
+        as_outdir / "progressive_config.json",
+        as_outdir / "progressive_runs_by_seed.csv",
+        as_outdir / "progressive_final_positions_y_up_sim.csv",
+    ]
+    representative_sources = [
+        representative_dir / "representative_selection.json",
+        representative_dir / "representative_rerun_verification.csv",
+    ]
+    _verify_source_hashes(rep_meta, as_sources, "representative", failures)
+    _verify_source_hashes(vis_meta, as_sources + representative_sources, "visualization", failures)
     for name in VIS_FILES:
-        path = vis_dir / name
-        if not path.exists():
-            failures.append(f"missing visualization output: {path}")
-        elif path.stat().st_size <= 0:
-            failures.append(f"empty visualization output: {path}")
+        _verify_visual_file(vis_dir / name, failures)
     return vis_meta, rep_meta
 
 
@@ -119,6 +174,7 @@ def verify_section_6_5_visualizations(
         failures.append(f"unexpected visualization variants: {variants}; expected {expected_variants}")
 
     rep_by_variant = {row["variant"]: row for row in rep_meta["selections"]}
+    rerun_verification = pd.read_csv(representative_dir / "representative_rerun_verification.csv")
     metric_rows = pd.read_csv(as_outdir / "progressive_runs_by_seed.csv", encoding="utf-8-sig")
     config = _load_json(as_outdir / "progressive_config.json")
     graph, vertice, dni, edges, distance_data = load_ini_data_from_csv(FILE_PATHS)
@@ -144,8 +200,22 @@ def verify_section_6_5_visualizations(
             continue
         rep = rep_by_variant[variant]
         seed = int(rep["seed"])
+        if float(rep.get("max_final_position_delta_sim", np.inf)) > atol:
+            failures.append(
+                f"representative rerun position delta exceeds tolerance for {variant}: "
+                f"{rep.get('max_final_position_delta_sim')}"
+            )
         if int(vis_meta["seeds"].get(variant, -1)) != seed:
             failures.append(f"visualization metadata seed mismatch for {variant}")
+
+        rerun_rows = rerun_verification[
+            (rerun_verification["variant"] == variant)
+            & (rerun_verification["seed"] == seed)
+        ]
+        if set(rerun_rows.get("metric", [])) != set(CORE_METRICS) or len(rerun_rows) != len(CORE_METRICS):
+            failures.append(f"representative rerun verification rows are incomplete for {variant} seed {seed}")
+        elif not rerun_rows["ok"].astype(str).str.lower().isin({"true", "1"}).all():
+            failures.append(f"representative rerun verification contains failed metrics for {variant} seed {seed}")
 
         source_row = metric_rows[(metric_rows["variant"] == variant) & (metric_rows["seed"] == seed)]
         if len(source_row) != 1:
@@ -225,6 +295,22 @@ def copy_visualizations_to_paper_results(*, vis_dir: Path, paper_results: Path, 
     destination.mkdir(parents=True, exist_ok=True)
     for name in VIS_FILES:
         shutil.copy2(vis_dir / name, destination / name)
+    report = vis_dir / "section_6_5_visualization_consistency_report.json"
+    if report.exists():
+        shutil.copy2(report, destination / report.name)
+    readme = paper_results / "README.md"
+    if readme.exists():
+        text = readme.read_text(encoding="utf-8")
+        old_status = (
+            "Representative Section 6.5 visualization subdirectories predate this rerun and\n"
+            "must be regenerated before they are used for revised DC-SMACOF claims."
+        )
+        new_status = (
+            "Section 6.5 representative visualizations were regenerated from the current formal AS\n"
+            "and passed scripts.verify_section_6_5_visualizations before being copied here."
+        )
+        if old_status in text:
+            readme.write_text(text.replace(old_status, new_status), encoding="utf-8")
     _refresh_manifest(paper_results)
     return destination
 

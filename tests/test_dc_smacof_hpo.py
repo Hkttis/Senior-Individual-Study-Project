@@ -20,6 +20,12 @@ def test_dc_weights_from_alpha_uses_log10_ratio():
     assert direction_weight == pytest.approx(2.0)
 
 
+def test_dc_smacof_model_defaults_match_final_hpo_selection():
+    assert w_weight == pytest.approx(1.0)
+    assert v_weight == pytest.approx(0.01)
+    assert np.log10(v_weight / w_weight) == pytest.approx(-2.0)
+
+
 def test_dc_anchor_split_excludes_frame_anchor_from_rmse_anchors():
     anchor_labels, anchor_align_label, rmse_anchor_labels = _anchor_split()
 

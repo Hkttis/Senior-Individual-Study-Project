@@ -1,0 +1,11 @@
+model_name,x,y,use_role
+A,0,0,anchor_align
+B,600,0,anchor
+C,0,800,anchor
+D,300,400,test
+E,300,-160,test
+F,-90,400,test
+G,390,800,test
+H,750,400,test
+I,750,530,test
+J,390,260,test

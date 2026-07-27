@@ -1,0 +1,11 @@
+order,node,parent_1,parent_2,parent_3
+0,A,,,
+1,B,,,
+2,C,,,
+3,D,A,B,C
+4,E,A,B,D
+5,F,A,C,D
+6,G,A,C,D
+7,H,A,C,D
+8,I,F,G,H
+9,J,F,G,I

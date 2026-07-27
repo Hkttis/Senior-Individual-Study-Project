@@ -235,3 +235,22 @@ Before writing or updating the final manuscript, verify the following:
   target and vector-consensus preprocessing with newly generated results.
 - Preserve HPO and ablation configuration files with the method metadata for
   every formal result folder.
+
+## Current final DC-SMACOF HPO selection
+
+The current final DC-SMACOF hyperparameter selection is recorded in:
+
+`outputs/ch5_dc_smacof_hparam_wang_current_alpha_-4_0_seed0_9_20260721/dc_smacof_selected_candidate.csv`
+
+- Search range: alpha = -4.0 to 0.0 in increments of 0.5.
+- Random seeds: 0 through 9.
+- Selection rule: Pareto filtering followed by the one-SE balanced rule.
+- Selected alpha: -2.0.
+- Distance weight: `w_weight = 1.0`.
+- Direction weight: `v_weight = 0.01`.
+- Definition: `alpha = log10(v_weight / w_weight)`.
+- Successful runs: 90 of 90.
+
+This selection applies to future DC-SMACOF ablation, representative-run, and
+visualization experiments. Earlier outputs generated with alpha = -0.5 are
+historical results and must not be mixed with the new formal reruns.
