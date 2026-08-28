@@ -36,11 +36,15 @@ from scripts.export_paper_tables import (
     export_smacof_vs_distonly_comparison,
 )
 from scripts.export_result_chapter_tables import export_result_chapter_tables
+from scripts.export_physics_bfgs_comparison import export_physics_bfgs_comparison
 from scripts.update_paper_results import (
     AS_MAIN_FILES,
     AS_SUPPLEMENTARY_FILES,
+    BFGS_FORMAL_FILES,
     DEFAULT_AS_OUTDIR,
+    DEFAULT_BFGS_OUTDIR,
     DEFAULT_DC_HPO_OUTDIR,
+    _validate_bfgs_source,
 )
 from run_paper_script.ch5_ablation_progressive import _paired, _random_percentiles, _summary
 
@@ -74,6 +78,7 @@ TABLE_STEMS = {
     "table_6_3_smacof_vs_distonly",
     "table_6_3_dc_smacof_vs_distdir",
     "table_6_4_overall_model_comparison",
+    "table_bfgs_vs_physics_full",
 }
 TABLE_FILES = {f"{stem}{suffix}" for stem in TABLE_STEMS for suffix in (".csv", ".md", ".tex")}
 
@@ -235,12 +240,14 @@ def _verify_snapshot_copies(
     *,
     as_outdir: Path,
     dc_hpo_outdir: Path,
+    bfgs_outdir: Path,
     paper_results: Path,
     failures: list[str],
 ) -> None:
     main_dir = paper_results / "03_progressive_as_main"
     supplementary_dir = paper_results / "04_progressive_as_supplementary"
     dc_dir = paper_results / "02_dc_smacof_hpo"
+    bfgs_dir = paper_results / "08_scipy_bfgs"
     expected_main_names = set(AS_MAIN_FILES) | {"summary_statistics_metadata.json"}
     actual_main_names = {path.name for path in main_dir.iterdir() if path.is_file()}
     if actual_main_names != expected_main_names:
@@ -261,6 +268,13 @@ def _verify_snapshot_copies(
         _compare_file(as_outdir / name, supplementary_dir / name, failures)
     for name in sorted(source_dc_names):
         _compare_file(dc_hpo_outdir / name, dc_dir / name, failures)
+    actual_bfgs_names = {path.name for path in bfgs_dir.iterdir() if path.is_file()}
+    if actual_bfgs_names != set(BFGS_FORMAL_FILES):
+        failures.append(
+            f"08_scipy_bfgs file-set mismatch: {sorted(actual_bfgs_names ^ set(BFGS_FORMAL_FILES))}"
+        )
+    for name in BFGS_FORMAL_FILES:
+        _compare_file(bfgs_outdir / name, bfgs_dir / name, failures)
 
 
 def _export_tables(as_outdir: Path, outdir: Path) -> None:
@@ -275,7 +289,12 @@ def _export_tables(as_outdir: Path, outdir: Path) -> None:
     export_smacof_dc_smacof_baseline_full_statistics(as_outdir=as_outdir, outdir=outdir, overwrite=True)
 
 
-def _verify_tables(as_outdir: Path, paper_results: Path, failures: list[str]) -> None:
+def _verify_tables(
+    as_outdir: Path,
+    bfgs_outdir: Path,
+    paper_results: Path,
+    failures: list[str],
+) -> None:
     actual_dir = paper_results / "05_paper_tables"
     with tempfile.TemporaryDirectory(prefix="paper_tables_verify_") as tmp:
         supporting_dir = Path(tmp) / "supporting"
@@ -284,6 +303,12 @@ def _verify_tables(as_outdir: Path, paper_results: Path, failures: list[str]) ->
         _export_tables(as_outdir, supporting_dir)
         export_result_chapter_tables(
             paper_table_dir=supporting_dir,
+            outdir=expected_dir,
+            overwrite=True,
+        )
+        export_physics_bfgs_comparison(
+            as_outdir=as_outdir,
+            bfgs_outdir=bfgs_outdir,
             outdir=expected_dir,
             overwrite=True,
         )
@@ -368,7 +393,13 @@ def _scan_forbidden_labels(paper_results: Path, failures: list[str]) -> None:
                 failures.append(f"obsolete label(s) {hits} in {path}")
 
 
-def verify_paper_results(*, as_outdir: Path, dc_hpo_outdir: Path, paper_results: Path) -> list[str]:
+def verify_paper_results(
+    *,
+    as_outdir: Path,
+    dc_hpo_outdir: Path,
+    bfgs_outdir: Path,
+    paper_results: Path,
+) -> list[str]:
     failures: list[str] = []
     if not as_outdir.exists():
         failures.append(f"missing AS output directory: {as_outdir}")
@@ -379,14 +410,22 @@ def verify_paper_results(*, as_outdir: Path, dc_hpo_outdir: Path, paper_results:
     if not dc_hpo_outdir.exists():
         failures.append(f"missing DC-SMACOF HPO output directory: {dc_hpo_outdir}")
         return failures
+    if not bfgs_outdir.exists():
+        failures.append(f"missing BFGS output directory: {bfgs_outdir}")
+        return failures
+    try:
+        _validate_bfgs_source(bfgs_outdir)
+    except (FileNotFoundError, ValueError) as exc:
+        failures.append(str(exc))
     _verify_numerical_experiment(as_outdir, failures)
     _verify_snapshot_copies(
         as_outdir=as_outdir,
         dc_hpo_outdir=dc_hpo_outdir,
+        bfgs_outdir=bfgs_outdir,
         paper_results=paper_results,
         failures=failures,
     )
-    _verify_tables(as_outdir, paper_results, failures)
+    _verify_tables(as_outdir, bfgs_outdir, paper_results, failures)
     _verify_figures(as_outdir, paper_results, failures)
     _verify_result_chapter_table_removed(paper_results, failures)
     _verify_manifest(paper_results, failures)
@@ -403,10 +442,12 @@ def main() -> None:
         help="Selected DC-SMACOF HPO output directory.",
     )
     parser.add_argument("--paper-results", default=str(DEFAULT_PAPER_RESULTS), help="paper_results/current directory.")
+    parser.add_argument("--bfgs-outdir", default=str(DEFAULT_BFGS_OUTDIR))
     args = parser.parse_args()
     failures = verify_paper_results(
         as_outdir=Path(args.as_outdir),
         dc_hpo_outdir=Path(args.dc_hpo_outdir),
+        bfgs_outdir=Path(args.bfgs_outdir),
         paper_results=Path(args.paper_results),
     )
     if failures:

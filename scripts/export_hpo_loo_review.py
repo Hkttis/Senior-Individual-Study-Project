@@ -75,6 +75,17 @@ def _selected_alpha_beta(hpo_outdir: Path) -> tuple[float, float]:
     return float(summary["alpha"]), float(summary["beta"])
 
 
+def _selected_distance_scale(hpo_outdir: Path) -> float:
+    config_path = hpo_outdir / "gridsearch_config.json"
+    if not config_path.exists():
+        return 1.0
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    scale = float(config.get("distance_scale", 1.0))
+    if not math.isfinite(scale) or scale <= 0.0:
+        raise ValueError(f"Invalid distance_scale in {config_path}: {scale}")
+    return scale
+
+
 def export_hpo_loo_review(
     *,
     hpo_outdir: str | Path,
@@ -88,6 +99,7 @@ def export_hpo_loo_review(
     refer_pos_sim: Sequence[float] = DEFAULT_REFER_POS_SIM,
 ) -> Path:
     hpo_outdir = Path(hpo_outdir)
+    distance_scale = _selected_distance_scale(hpo_outdir)
     if alpha is None or beta is None:
         selected_alpha, selected_beta = _selected_alpha_beta(hpo_outdir)
         alpha = selected_alpha if alpha is None else alpha
@@ -127,6 +139,7 @@ def export_hpo_loo_review(
             repulsion_strength=repulsion,
             directional_force_magnitude=directional_force,
             refer_pos_sim=refer_pos_sim,
+            distance_scale=distance_scale,
         )
 
         pred_km = px_list_to_km_list(pos_final.tolist(), tuple(refer_pos_sim), km2pix)
@@ -157,6 +170,7 @@ def export_hpo_loo_review(
                 "fold_id": fold.fold_id,
                 "alpha": float(alpha),
                 "beta": float(beta),
+                "distance_scale": distance_scale,
                 "seed": int(seed),
                 "train_labels": "|".join(fold.train_labels),
                 "heldout_label": fold.heldout_label,

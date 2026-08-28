@@ -61,7 +61,11 @@ from library.data_io import (
 )
 from library.geometry import get_lcc_bounds, get_lcc_parameters, lcc_transformation_with_anchor
 from library.initialization import generate_CHEN_initial_positions
-from library.metrics import calculate_kruskals_stress, direction_violation_rate
+from library.metrics import (
+    calculate_kruskals_stress,
+    direction_violation_rate,
+    mean_angular_error_violations,
+)
 from library.physics import main_physics_simulation
 from library.units import data_Li2sim, pos_matrix_sim2km
 
@@ -141,6 +145,39 @@ def _load_anchor_and_test_inputs(
     )
 
 
+def _resolve_anchor_and_test_inputs(
+    dni: Dict[str, int],
+    *,
+    anchor_labels_override: Sequence[str] | None = None,
+    test_labels_override: Sequence[str] | None = None,
+) -> tuple[List[str], List[Tuple[float, float]], List[str], List[Tuple[float, float]]]:
+    if anchor_labels_override is None and test_labels_override is None:
+        return _load_anchor_and_test_inputs(list(dni), dni)
+    if anchor_labels_override is None or test_labels_override is None:
+        raise ValueError("anchor_labels_override and test_labels_override must be provided together.")
+
+    anchor_labels = list(anchor_labels_override)
+    test_labels = list(test_labels_override)
+    if len(anchor_labels) != 3 or len(set(anchor_labels)) != 3:
+        raise ValueError(f"Expected exactly 3 distinct override anchors, got {anchor_labels}")
+    if len(test_labels) != 8 or len(set(test_labels)) != 8:
+        raise ValueError(f"Expected exactly 8 distinct override test sites, got {test_labels}")
+    overlap = sorted(set(anchor_labels) & set(test_labels))
+    if overlap:
+        raise ValueError(f"Anchor/test override labels overlap: {overlap}")
+
+    site_lonlat = _load_site_lonlat_by_label(dni)
+    missing = [label for label in anchor_labels + test_labels if label not in site_lonlat]
+    if missing:
+        raise ValueError(f"Override labels missing from site points: {missing}")
+    return (
+        anchor_labels,
+        [site_lonlat[label] for label in anchor_labels],
+        test_labels,
+        [site_lonlat[label] for label in test_labels],
+    )
+
+
 def _build_anchor_loo_folds(
     anchor_labels: Sequence[str],
     anchor_lonlat: Sequence[Tuple[float, float]],
@@ -210,6 +247,26 @@ def _euclidean_rmse_km(
     return float(math.sqrt(sum(se) / len(se))) if se else float("nan")
 
 
+def _site_errors_km(
+    *,
+    pos_y_up_sim: Sequence[Sequence[float]],
+    dni: Dict[str, int],
+    refer_pos_sim: Sequence[float],
+    gt_labels: Sequence[str],
+    gt_lonlat: Sequence[Tuple[float, float]],
+    eval_labels: Sequence[str],
+    anchor_label_for_frame: str,
+) -> Dict[str, float]:
+    pred_km = px_list_to_km_list(pos_y_up_sim, tuple(refer_pos_sim), km2pix)
+    gt_lonlat_full = _build_gt_lonlat_full(dni, gt_labels, gt_lonlat)
+    gt_km = lcc_transformation_with_anchor(dni, gt_lonlat_full, anchor_label=anchor_label_for_frame)
+    errors: Dict[str, float] = {}
+    for label in eval_labels:
+        idx = dni[label]
+        errors[label] = float(np.linalg.norm(np.asarray(pred_km[idx], dtype=float) - np.asarray(gt_km[idx], dtype=float)))
+    return errors
+
+
 def _non_dominated_mask(points: np.ndarray) -> np.ndarray:
     mask = np.ones(points.shape[0], dtype=bool)
     for i in range(points.shape[0]):
@@ -241,6 +298,25 @@ def _weights_from_alpha_beta(
     return w_dir, w_reg, spring_stiffness, directional_force, repulsion_strength
 
 
+def _scale_sim_distance_data(data_sim: Sequence[Sequence[object]], distance_scale: float) -> list[list[object]]:
+    scale = float(distance_scale)
+    if not np.isfinite(scale) or scale <= 0.0:
+        raise ValueError("distance_scale must be finite and strictly positive.")
+
+    scaled: list[list[object]] = []
+    for row in data_sim:
+        if len(row) < 3:
+            raise ValueError(f"Distance row must contain source, target, and distance: {row}")
+        copied = list(row)
+        for index in range(2, len(copied)):
+            distance = float(copied[index])
+            if not np.isfinite(distance) or distance <= 0.0:
+                raise ValueError(f"Distance values must be finite and strictly positive: {row}")
+            copied[index] = distance * scale
+        scaled.append(copied)
+    return scaled
+
+
 def _run_physics_eval(
     *,
     seed: int,
@@ -254,11 +330,12 @@ def _run_physics_eval(
     repulsion_strength: float,
     directional_force_magnitude: float,
     refer_pos_sim: Sequence[float],
+    distance_scale: float = 1.0,
 ) -> tuple[Dict[str, float], np.ndarray, List[str], Dict[str, int]]:
     np.random.seed(seed)
     directional_data = uploading_directional_data()
     _graph, _vertice0, _dni0, _edges0, data_li = load_ini_data_from_csv(FILE_PATHS)
-    data_sim = data_Li2sim(data_li)
+    data_sim = _scale_sim_distance_data(data_Li2sim(data_li), distance_scale)
 
     vertice, dni, _data_li_again, pos_init, fixed_positions_list = generate_CHEN_initial_positions(
         list(refer_pos_sim),
@@ -284,6 +361,7 @@ def _run_physics_eval(
     pos_final_km = pos_matrix_sim2km(pos_final_y_up.tolist())
     e_distance = float(calculate_kruskals_stress(dni, pos_final_km, data_sim))
     e_direction = float(direction_violation_rate(pos_final_y_up, directional_data, dni))
+    e_direction_mae = float(mean_angular_error_violations(pos_final_y_up, directional_data, dni))
     rmse = _rmse_labels_km(
         pos_y_up_sim=pos_final_y_up,
         dni=dni,
@@ -297,6 +375,7 @@ def _run_physics_eval(
     metrics = {
         "E_distance_stress": e_distance,
         "E_direction_vr": e_direction,
+        "E_direction_mae": e_direction_mae,
         "RMSE_km": rmse,
         "wrong_dir_count": float(len(wrong_direction_lists)),
         "last_raw_stress_trace": float(stress_history[-1]) if len(stress_history) > 0 else float("nan"),
@@ -475,17 +554,24 @@ def _run_final_selected_model(
     outdir: Path,
     selection_rule: str = "pareto_one_se_balanced",
     selection_meta: dict | None = None,
-) -> None:
+    final_frame_anchor_label: str | None = None,
+    save_final_positions: bool = False,
+    distance_scale: float = 1.0,
+) -> Dict[str, object]:
     alpha = float(selected["alpha"])
     beta = float(selected["beta"])
     _w_dir, _w_reg, spring, directional_force, repulsion = _weights_from_alpha_beta(
         alpha, beta, w_dis, base_spring_stiffness, base_directional_force, base_repulsion_strength
     )
-    anchor_label_for_frame = anchor_labels[0]
+    anchor_label_for_frame = final_frame_anchor_label or anchor_labels[0]
+    if anchor_label_for_frame not in anchor_labels:
+        raise ValueError("final_frame_anchor_label must be one of the three calibration anchors.")
     rmse_gt_labels = list(anchor_labels) + list(test_labels)
     rmse_gt_lonlat = list(anchor_lonlat) + list(test_lonlat)
 
     final_rows: List[dict] = []
+    site_error_rows: List[dict] = []
+    position_rows: List[dict] = []
     best_seed = None
     best_pos = None
     best_labels = None
@@ -504,17 +590,49 @@ def _run_final_selected_model(
             repulsion_strength=repulsion,
             directional_force_magnitude=directional_force,
             refer_pos_sim=refer_pos_sim,
+            distance_scale=distance_scale,
         )
         row = {
             "selection_rule": selection_rule,
+            "distance_scale": float(distance_scale),
             "alpha": alpha,
             "beta": beta,
             "seed": int(seed),
             "E_distance_stress": metrics["E_distance_stress"],
             "E_direction_vr": metrics["E_direction_vr"],
+            "E_direction_mae": metrics["E_direction_mae"],
             "RMSE_final_test_km": metrics["RMSE_km"],
         }
         final_rows.append(row)
+        site_errors = _site_errors_km(
+            pos_y_up_sim=pos_final,
+            dni=_dni,
+            refer_pos_sim=refer_pos_sim,
+            gt_labels=rmse_gt_labels,
+            gt_lonlat=rmse_gt_lonlat,
+            eval_labels=test_labels,
+            anchor_label_for_frame=anchor_label_for_frame,
+        )
+        for label, error_km in site_errors.items():
+            site_error_rows.append(
+                {
+                    "seed": int(seed),
+                    "site_label": label,
+                    "error_km": error_km,
+                    "squared_error_km2": error_km**2,
+                }
+            )
+        if save_final_positions:
+            for node_idx, label in enumerate(vertice):
+                position_rows.append(
+                    {
+                        "seed": int(seed),
+                        "node_idx": int(node_idx),
+                        "label": label,
+                        "x_y_up_sim": float(pos_final[node_idx, 0]),
+                        "y_y_up_sim": float(pos_final[node_idx, 1]),
+                    }
+                )
         if metrics["RMSE_km"] < best_rmse:
             best_rmse = metrics["RMSE_km"]
             best_seed = int(seed)
@@ -522,18 +640,27 @@ def _run_final_selected_model(
             best_labels = vertice
 
     df_final = pd.DataFrame(final_rows)
+    df_site_errors = pd.DataFrame(site_error_rows)
     df_final.to_csv(outdir / "selected_final_runs_by_seed.csv", index=False, encoding="utf-8-sig")
+    df_site_errors.to_csv(outdir / "selected_final_site_errors.csv", index=False, encoding="utf-8-sig")
+    if save_final_positions:
+        pd.DataFrame(position_rows).to_csv(
+            outdir / "selected_final_positions_y_up_sim.csv", index=False, encoding="utf-8-sig"
+        )
     summary = {
         "selection_rule": selection_rule,
+        "distance_scale": float(distance_scale),
         "alpha": alpha,
         "beta": beta,
         "n_seeds": int(len(seeds)),
         "anchor_labels": list(anchor_labels),
+        "final_frame_anchor_label": anchor_label_for_frame,
         "test_labels": list(test_labels),
         "RMSE_final_test_mean_km": float(df_final["RMSE_final_test_km"].mean()),
         "RMSE_final_test_std_km": float(df_final["RMSE_final_test_km"].std(ddof=1)),
         "E_distance_stress_mean": float(df_final["E_distance_stress"].mean()),
         "E_direction_vr_mean": float(df_final["E_direction_vr"].mean()),
+        "E_direction_mae_mean": float(df_final["E_direction_mae"].mean()),
         "best_seed_by_final_test_rmse": best_seed,
     }
     if selection_meta:
@@ -551,6 +678,12 @@ def _run_final_selected_model(
             }
         ).to_csv(outdir / "selected_final_best_positions_y_up_sim.csv", index=False, encoding="utf-8-sig")
 
+    return {
+        "df_final": df_final,
+        "df_site_errors": df_site_errors,
+        "summary": summary,
+    }
+
 
 def run_anchor_loo_gridsearch_pareto(
     *,
@@ -567,12 +700,33 @@ def run_anchor_loo_gridsearch_pareto(
     base_repulsion_strength: float,
     refer_pos_sim: Sequence[float],
     outdir: str | Path | None,
+    final_seeds: Sequence[int] | None = None,
     export_loo_review: bool = False,
     overwrite: bool = False,
+    anchor_labels_override: Sequence[str] | None = None,
+    test_labels_override: Sequence[str] | None = None,
+    final_frame_anchor_label: str | None = None,
+    generate_plots: bool = True,
+    save_final_positions: bool = False,
+    distance_scale: float = 1.0,
 ) -> Dict[str, object]:
+    distance_scale = float(distance_scale)
+    if not np.isfinite(distance_scale) or distance_scale <= 0.0:
+        raise ValueError("distance_scale must be finite and strictly positive.")
+    hpo_seeds = list(map(int, seeds))
+    resolved_final_seeds = hpo_seeds if final_seeds is None else list(map(int, final_seeds))
+    if not hpo_seeds or not resolved_final_seeds:
+        raise ValueError("HPO seeds and final-evaluation seeds cannot be empty.")
     _graph, vertice, dni, _edges, _data = load_ini_data_from_csv(FILE_PATHS)
     gt_lonlat_all = uploading_ground_truth(vertice, dni)
-    anchor_labels, anchor_lonlat, test_labels, test_lonlat = _load_anchor_and_test_inputs(vertice, dni)
+    anchor_labels, anchor_lonlat, test_labels, test_lonlat = _resolve_anchor_and_test_inputs(
+        dni,
+        anchor_labels_override=anchor_labels_override,
+        test_labels_override=test_labels_override,
+    )
+    resolved_final_frame_anchor = final_frame_anchor_label or anchor_labels[0]
+    if resolved_final_frame_anchor not in anchor_labels:
+        raise ValueError("final_frame_anchor_label must be one of the three calibration anchors.")
     folds = _build_anchor_loo_folds(anchor_labels, anchor_lonlat)
     alphas, betas = _make_alpha_beta_grid(alpha_min, alpha_max, alpha_step, beta_min, beta_max, beta_step)
 
@@ -609,7 +763,7 @@ def run_anchor_loo_gridsearch_pareto(
             combo_fold_metrics: List[dict] = []
             for fold in folds:
                 seed_metrics: List[dict] = []
-                for seed in seeds:
+                for seed in hpo_seeds:
                     try:
                         metrics, _pos_final, _vertice, _dni = _run_physics_eval(
                             seed=int(seed),
@@ -623,6 +777,7 @@ def run_anchor_loo_gridsearch_pareto(
                             repulsion_strength=repulsion,
                             directional_force_magnitude=directional_force,
                             refer_pos_sim=refer_pos_sim,
+                            distance_scale=distance_scale,
                         )
                     except Exception as exc:
                         print(
@@ -631,6 +786,7 @@ def run_anchor_loo_gridsearch_pareto(
                         metrics = {
                             "E_distance_stress": float("nan"),
                             "E_direction_vr": float("nan"),
+                            "E_direction_mae": float("nan"),
                             "RMSE_km": float("nan"),
                             "wrong_dir_count": float("nan"),
                             "last_raw_stress_trace": float("nan"),
@@ -640,6 +796,7 @@ def run_anchor_loo_gridsearch_pareto(
                         {
                             "alpha": float(alpha),
                             "beta": float(beta),
+                            "distance_scale": distance_scale,
                             "w_dis": float(w_dis),
                             "w_dir": float(w_dir),
                             "w_reg": float(w_reg),
@@ -650,6 +807,7 @@ def run_anchor_loo_gridsearch_pareto(
                             "seed": int(seed),
                             "E_distance_stress": metrics["E_distance_stress"],
                             "E_direction_vr": metrics["E_direction_vr"],
+                            "E_direction_mae": metrics["E_direction_mae"],
                             "RMSE_anchor_LOO_km": metrics["RMSE_km"],
                             "wrong_dir_count": metrics["wrong_dir_count"],
                             "last_raw_stress_trace": metrics["last_raw_stress_trace"],
@@ -661,6 +819,7 @@ def run_anchor_loo_gridsearch_pareto(
                 fold_summary = {
                     "alpha": float(alpha),
                     "beta": float(beta),
+                    "distance_scale": distance_scale,
                     "w_dis": float(w_dis),
                     "w_dir": float(w_dir),
                     "w_reg": float(w_reg),
@@ -668,12 +827,14 @@ def run_anchor_loo_gridsearch_pareto(
                     "train_labels": "|".join(fold.train_labels),
                     "train_anchor_label": fold.train_anchor_label,
                     "heldout_label": fold.heldout_label,
-                    "n_seeds": int(len(seeds)),
+                    "n_seeds": int(len(hpo_seeds)),
                     "n_failed_seeds": n_failed_seeds,
                     "E_distance_stress_mean": float(df_seed["E_distance_stress"].mean()),
                     "E_distance_stress_std": float(df_seed["E_distance_stress"].std(ddof=1)),
                     "E_direction_vr_mean": float(df_seed["E_direction_vr"].mean()),
                     "E_direction_vr_std": float(df_seed["E_direction_vr"].std(ddof=1)),
+                    "E_direction_mae_mean": float(df_seed["E_direction_mae"].mean()),
+                    "E_direction_mae_std": float(df_seed["E_direction_mae"].std(ddof=1)),
                     "RMSE_anchor_LOO_mean_km": float(df_seed["RMSE_km"].mean()),
                     "RMSE_anchor_LOO_std_km": float(df_seed["RMSE_km"].std(ddof=1)),
                 }
@@ -685,6 +846,7 @@ def run_anchor_loo_gridsearch_pareto(
                 {
                     "alpha": float(alpha),
                     "beta": float(beta),
+                    "distance_scale": distance_scale,
                     "w_dis": float(w_dis),
                     "w_dir": float(w_dir),
                     "w_reg": float(w_reg),
@@ -692,12 +854,14 @@ def run_anchor_loo_gridsearch_pareto(
                     "directional_force": directional_force,
                     "repulsion_strength": repulsion,
                     "n_folds": int(len(combo_fold_metrics)),
-                    "n_seeds_per_fold": int(len(seeds)),
+                    "n_seeds_per_fold": int(len(hpo_seeds)),
                     "n_failed_runs": int(df_folds_for_combo["n_failed_seeds"].sum()),
                     "E_distance_stress_mean": float(df_folds_for_combo["E_distance_stress_mean"].mean()),
                     "E_distance_stress_std": float(df_folds_for_combo["E_distance_stress_mean"].std(ddof=1)),
                     "E_direction_vr_mean": float(df_folds_for_combo["E_direction_vr_mean"].mean()),
                     "E_direction_vr_std": float(df_folds_for_combo["E_direction_vr_mean"].std(ddof=1)),
+                    "E_direction_mae_mean": float(df_folds_for_combo["E_direction_mae_mean"].mean()),
+                    "E_direction_mae_std": float(df_folds_for_combo["E_direction_mae_mean"].std(ddof=1)),
                     "RMSE_anchor_LOO_mean_km": float(df_folds_for_combo["RMSE_anchor_LOO_mean_km"].mean()),
                     "RMSE_anchor_LOO_std_km": float(df_folds_for_combo["RMSE_anchor_LOO_mean_km"].std(ddof=1)),
                 }
@@ -720,16 +884,22 @@ def run_anchor_loo_gridsearch_pareto(
         "validation": "three_anchor_leave_one_anchor_out",
         "objectives": objective_cols,
         "default_selection_rule": "pareto_one_se_balanced",
-        "final_rmse_labels": "use_role == test",
+        "distance_scale": distance_scale,
+        "distance_scaling_policy": "all textual distance targets multiplied in memory before simulation and Stress evaluation",
+        "final_rmse_labels": "explicit test_labels override" if anchor_labels_override is not None else "use_role == test",
         "anchor_labels": list(anchor_labels),
         "test_labels": list(test_labels),
+        "final_frame_anchor_label": resolved_final_frame_anchor,
+        "split_override": anchor_labels_override is not None,
         "lcc_bounds": dict(
             zip(["lon_min", "lon_max", "lat_min", "lat_max"], map(float, get_lcc_bounds()))
         ),
         "lcc_parameters": dict(zip(["lat_1", "lat_2", "lon_0"], map(float, get_lcc_parameters()))),
         "lcc_standard_parallel_rule": "lat_1=lat_min+(lat_max-lat_min)/6; lat_2=lat_max-(lat_max-lat_min)/6",
         "lcc_bounds_source": FILE_PATHS["ground_truth_path"],
-        "seeds": list(map(int, seeds)),
+        "seeds": hpo_seeds,
+        "hpo_seeds": hpo_seeds,
+        "final_evaluation_seeds": resolved_final_seeds,
         "alpha_range": [alpha_min, alpha_max, alpha_step],
         "beta_range": [beta_min, beta_max, beta_step],
         "alpha_beta_scale": "base-10: w_dir=w_dis*10^alpha, w_reg=w_dis*10^beta",
@@ -743,35 +913,54 @@ def run_anchor_loo_gridsearch_pareto(
         json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    _plot_heatmap(
-        df_grid,
-        "RMSE_anchor_LOO_mean_km",
-        outdir_path / "heatmap_rmse_anchor_loo.png",
-        "Grid Heatmap: RMSE_anchor_LOO (km)",
-    )
-    _plot_heatmap(
-        df_grid,
-        "E_distance_stress_mean",
-        outdir_path / "heatmap_kruskal_stress.png",
-        "Grid Heatmap: E_distance (Kruskal stress)",
-    )
-    _plot_heatmap(
-        df_grid,
-        "E_direction_vr_mean",
-        outdir_path / "heatmap_direction_violation.png",
-        "Grid Heatmap: E_direction (Violation rate)",
-    )
-    _plot_pareto_3d(df_grid, pareto_mask, outdir_path / "pareto_front_3d.png")
-    _plot_pareto_2d_projections(df_grid, pareto_mask, outdir_path / "pareto_front_2d_projections.png")
+    if generate_plots:
+        _plot_heatmap(
+            df_grid,
+            "RMSE_anchor_LOO_mean_km",
+            outdir_path / "heatmap_rmse_anchor_loo.png",
+            "Grid Heatmap: RMSE_anchor_LOO (km)",
+        )
+        _plot_heatmap(
+            df_grid,
+            "E_distance_stress_mean",
+            outdir_path / "heatmap_kruskal_stress.png",
+            "Grid Heatmap: E_distance (Kruskal stress)",
+        )
+        _plot_heatmap(
+            df_grid,
+            "E_direction_vr_mean",
+            outdir_path / "heatmap_direction_violation.png",
+            "Grid Heatmap: E_direction (Violation rate)",
+        )
+        _plot_pareto_3d(df_grid, pareto_mask, outdir_path / "pareto_front_3d.png")
+        _plot_pareto_2d_projections(df_grid, pareto_mask, outdir_path / "pareto_front_2d_projections.png")
 
     selected, selection_meta = _select_one_se_balanced_candidate(df_pareto, objective_cols)
+    selected_alpha = float(selected["alpha"])
+    selected_beta = float(selected["beta"])
+    selection_meta.update(
+        {
+            "selected_on_alpha_boundary": bool(
+                np.isclose(selected_alpha, alpha_min) or np.isclose(selected_alpha, alpha_max)
+            ),
+            "selected_on_beta_boundary": bool(
+                np.isclose(selected_beta, beta_min) or np.isclose(selected_beta, beta_max)
+            ),
+            "boundary_policy": (
+                "fixed_common_grid_no_split_specific_expansion; report boundary-selection frequency"
+            ),
+        }
+    )
+    selection_meta["selected_on_grid_boundary"] = bool(
+        selection_meta["selected_on_alpha_boundary"] or selection_meta["selected_on_beta_boundary"]
+    )
     _run_final_selected_model(
         selected=selected,
         anchor_labels=anchor_labels,
         anchor_lonlat=anchor_lonlat,
         test_labels=test_labels,
         test_lonlat=test_lonlat,
-        seeds=seeds,
+        seeds=resolved_final_seeds,
         w_dis=w_dis,
         base_spring_stiffness=base_spring_stiffness,
         base_directional_force=base_directional_force,
@@ -780,6 +969,9 @@ def run_anchor_loo_gridsearch_pareto(
         outdir=outdir_path,
         selection_rule=selection_meta["selection_rule"],
         selection_meta=selection_meta,
+        final_frame_anchor_label=resolved_final_frame_anchor,
+        save_final_positions=save_final_positions,
+        distance_scale=distance_scale,
     )
 
     print("\n=== Default Pareto candidate by one-SE balanced rule ===")
@@ -812,6 +1004,8 @@ def run_anchor_loo_gridsearch_pareto(
         "df_folds": df_folds,
         "df_grid": df_grid,
         "df_pareto": df_pareto,
+        "selected": selected,
+        "selection_meta": selection_meta,
         "outdir": outdir_path,
     }
 
@@ -821,6 +1015,12 @@ def _parse_args() -> argparse.Namespace:
         description="Grid-search alpha/beta with three-anchor leave-one-anchor-out validation and Pareto analysis"
     )
     parser.add_argument("--seeds", type=str, default="0,1,2", help="Comma-separated seeds, e.g. 0,1,2")
+    parser.add_argument(
+        "--final-seeds",
+        type=str,
+        default="",
+        help="Optional seeds for the selected final model; defaults to --seeds.",
+    )
     parser.add_argument("--alpha-min", type=float, default=-1.0)
     parser.add_argument("--alpha-max", type=float, default=2.0)
     parser.add_argument("--alpha-step", type=float, default=0.5)
@@ -828,6 +1028,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--beta-max", type=float, default=2.0)
     parser.add_argument("--beta-step", type=float, default=0.5)
     parser.add_argument("--w-dis", type=float, default=1.0)
+    parser.add_argument("--distance-scale", type=float, default=1.0)
     parser.add_argument("--base-spring", type=float, default=SPRING_STIFFNESS_BASE)
     parser.add_argument("--base-dir", type=float, default=DIRECTIONAL_FORCE_MAGNITUDE_BASE)
     parser.add_argument("--base-rep", type=float, default=REPULSION_STRENGTH_BASE)
@@ -848,8 +1049,10 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     seeds = _parse_seed_list(args.seeds)
+    final_seeds = _parse_seed_list(args.final_seeds) if args.final_seeds.strip() else seeds
     run_anchor_loo_gridsearch_pareto(
         seeds=seeds,
+        final_seeds=final_seeds,
         alpha_min=args.alpha_min,
         alpha_max=args.alpha_max,
         alpha_step=args.alpha_step,
@@ -864,6 +1067,7 @@ def main() -> None:
         outdir=args.outdir,
         export_loo_review=args.export_loo_review,
         overwrite=args.overwrite,
+        distance_scale=args.distance_scale,
     )
 
 

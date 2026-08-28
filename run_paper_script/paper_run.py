@@ -6,7 +6,7 @@ Run commands from the physics_simulation project root:
   C:\Users\hktti\Desktop\Codex projects\physics_simulation
 
 Current data convention:
-  - data/site_rmse_points.csv contains 3 rows with use_role=anchor.
+  - data/site_rmse_points.csv contains 1 anchor_align and 2 anchor rows.
   - It contains 8 rows with use_role=test for final site-position RMSE.
   - LCC bounds and standard parallels are read from site_rmse_points.csv.
   - New HPO/ablation outputs record LCC metadata in their config JSON files.
@@ -27,10 +27,30 @@ python -m run_paper_script.paper_run ch5-baseline --model SMACOF --vis
 python -m run_paper_script.paper_run ch5-baseline --model DC-SMACOF --vis
 python -m run_paper_script.paper_run ch5-compare --seed 37
 python -m run_paper_script.paper_run ch5-benchmark --n-runs 100 --save-histories
-python -m run_paper_script.paper_run ch5-bootstrap --n-bootstrap 300 --spring-jitter 0.05 --repulse-jitter 0.20
+python -m run_paper_script.paper_run ch5-bootstrap --hpo-outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10_run2_manual_alpha_1_beta_-0.5 --n-bootstrap 300 --alpha-jitter 0.05 --beta-jitter 0.05 --outdir outputs/ch5_bootstrap_physics_alpha_1_beta_-0.5_jitter0p05_300runs
+python -m run_paper_script.paper_run ch5-scipy-bfgs --seeds 0,1 --visualize-seeds 0,1 --outdir outputs/ch5_scipy_bfgs_smoke_seed0_1
+python -m run_paper_script.paper_run ch5-scipy-bfgs-hpo --seeds 0 --alpha-min 1 --alpha-max 1 --alpha-step 1 --beta-min -0.5 --beta-max -0.5 --beta-step 1 --outdir outputs/ch5_scipy_bfgs_hpo_smoke
+python -m run_paper_script.paper_run ch5-scipy-bfgs --hpo-outdir outputs/ch5_scipy_bfgs_hpo_main --seeds 0,1 --no-visualizations --outdir outputs/ch5_scipy_bfgs_selected_smoke
+python -m run_paper_script.paper_run ch5-physics-bfgs-polish --seeds 0 --rerun-physics-trajectory --physics-stride 25 --outdir outputs/ch5_physics_to_bfgs_polishing_smoke
+python -m run_paper_script.paper_run ch5-bfgs-representatives --source-outdir outputs/ch5_scipy_bfgs_hpo_selected_alpha_0p5_beta_-0p5_100seeds_20260823 --outdir outputs/ch5_scipy_bfgs_hpo_selected_representative_minima_20260823
+
+Formal PhysicsSim -> BFGS polishing, 100 seeds with trajectories and force diagnostics:
+python -m run_paper_script.paper_run ch5-physics-bfgs-polish --seeds 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99 --as-outdir outputs/ch5_progressive_as_physics_alpha_1_beta_-0.5_dc_alpha_-2_wang_current_100seeds_random1000_20260721 --reference-bfgs-outdir outputs/ch5_scipy_bfgs_full_100seeds_20260821 --rerun-physics-trajectory --physics-stride 25 --outdir outputs/ch5_physics_to_bfgs_polishing_source_weights_100seeds_20260827
 
 Preflight HPO smoke test:
 python -m run_paper_script.paper_run ch5-hparam-kfold --seeds 0 --alpha-min 1 --alpha-max 1 --alpha-step 1 --beta-min -0.5 --beta-max -0.5 --beta-step 1 --outdir outputs/preflight_hpo_lcc_sitebounds_smoke
+
+Anchor-split robustness smoke test after completing the candidate workbook:
+python -m scripts.check_anchor_split_candidates
+python -m run_paper_script.paper_run ch5-anchor-robustness --seeds 0 --final-seeds 0,1 --alpha-min 1 --alpha-max 1 --alpha-step 1 --beta-min -0.5 --beta-max -0.5 --beta-step 1 --max-splits 1 --outdir outputs/ch5_anchor_split_robustness_smoke
+
+Detour-factor sensitivity preflight and formal experiment:
+python -m scripts.check_detour_sensitivity_preflight --outdir outputs/ch5_detour_factor_sensitivity_formal_13scenarios_hpo10_final100
+python -m run_paper_script.paper_run ch5-detour-sensitivity --outdir outputs/ch5_detour_factor_sensitivity_formal_13scenarios_hpo10_final100
+
+Fixed-hyperparameter detour sensitivity (alpha=1, beta=-0.5; 100 paired seeds):
+python -m scripts.check_detour_sensitivity_preflight --fixed-alpha 1 --fixed-beta -0.5 --outdir outputs/ch5_detour_factor_sensitivity_fixed_alpha_1_beta_-0.5_13scenarios_100seeds
+python -m run_paper_script.paper_run ch5-detour-sensitivity --fixed-alpha 1 --fixed-beta -0.5 --outdir outputs/ch5_detour_factor_sensitivity_fixed_alpha_1_beta_-0.5_13scenarios_100seeds
 
 Formal HPO grid:
 python -m run_paper_script.paper_run ch5-hparam-kfold --seeds 0,1,2,3,4,5,6,7,8,9 --alpha-min -1 --alpha-max 1.5 --alpha-step 0.5 --beta-min -2 --beta-max 0.5 --beta-step 0.5 --outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10
@@ -105,12 +125,24 @@ def main() -> None:
         _as_mod("run_paper_script.ch5_benchmark_models")
     elif cmd == "ch5-bootstrap":
         _as_mod("run_paper_script.ch5_bootstrap_stability")
+    elif cmd == "ch5-scipy-bfgs":
+        _as_mod("run_paper_script.ch5_scipy_bfgs")
+    elif cmd == "ch5-scipy-bfgs-hpo":
+        _as_mod("run_paper_script.ch5_scipy_bfgs_hpo")
+    elif cmd == "ch5-physics-bfgs-polish":
+        _as_mod("run_paper_script.ch5_physics_bfgs_polishing")
+    elif cmd == "ch5-bfgs-representatives":
+        _as_mod("scripts.export_bfgs_representative_minima")
     elif cmd == "ch5-ablation":
         _as_mod("run_paper_script.ch5_ablation_study")
     elif cmd == "ch5-ablation-progressive":
         _as_mod("run_paper_script.ch5_ablation_progressive")
     elif cmd == "ch5-hparam-kfold":
         _as_mod("run_paper_script.ch5_hparam_kfold_gridsearch_pareto")
+    elif cmd == "ch5-anchor-robustness":
+        _as_mod("run_paper_script.ch5_anchor_split_robustness")
+    elif cmd == "ch5-detour-sensitivity":
+        _as_mod("run_paper_script.ch5_detour_factor_sensitivity")
     elif cmd == "ch5-dc-hparam":
         _as_mod("run_paper_script.ch5_dc_smacof_hparam")
     elif cmd == "ch5-dc-review":
