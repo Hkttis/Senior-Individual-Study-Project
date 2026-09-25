@@ -11,10 +11,21 @@ from library.visualization import plotting_physics_simulation
 from library.metrics import raw_distance_stress_from_sim_data
 from library.units import pos_matrix_sim2km
 from library.directions import DIR4_SIM, DIR4DIAG_RAW_SIM, DIR8_UNIT_SIM
+from library.directional_objectives import (
+    DIRECTIONAL_OBJECTIVE_EXACT,
+    DIRECTIONAL_OBJECTIVE_SECTOR,
+    DIRECTIONAL_OBJECTIVE_SOFT_EXACT,
+    exact_direction_pair_energy_force,
+    normalize_directional_objective,
+    softened_exact_direction_pair_energy_force,
+)
 
 
 def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_positions_list,
-                            spring_stiffness,repulsion_strength,directional_force_magnitude, plot = False):
+                            spring_stiffness,repulsion_strength,directional_force_magnitude, plot = False,
+                            directional_objective=DIRECTIONAL_OBJECTIVE_SECTOR,
+                            direction_softening_delta=MIN_DISTANCE_BASE,
+                            direction_tolerance_scale=1.0):
     n = len(vertice)
 
     mass = MASS_BASE
@@ -43,7 +54,10 @@ def main_physics_simulation(vertice,dni,data,pos_matrix,directional_data,fixed_p
 
     wrong_direction_lists,stress_history,pos_history, pos_matrix = run_physics_simulation(
         min_distance,repulsion_strength,resistance,directional_force_magnitude,
-        screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix, plot
+        screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix, plot,
+        directional_objective=directional_objective,
+        direction_softening_delta=direction_softening_delta,
+        direction_tolerance_scale=direction_tolerance_scale,
     )
 
     if plot:
@@ -97,7 +111,17 @@ def create_nodes_and_springs(n,mass,radius,vrange,spring_stiffness,spring_dampin
 
 
 def run_physics_simulation(min_distance,repulsion_strength,resistance,directional_force_magnitude,
-                           screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix,plot):
+                           screen,space,draw_options,font,nodes,directional_data,data,vertice,dni,pos_matrix,plot,
+                           directional_objective=DIRECTIONAL_OBJECTIVE_SECTOR,
+                           direction_softening_delta=MIN_DISTANCE_BASE,
+                           direction_tolerance_scale=1.0):
+    directional_objective = normalize_directional_objective(directional_objective)
+    direction_softening_delta = float(direction_softening_delta)
+    if not np.isfinite(direction_softening_delta) or direction_softening_delta <= 0.0:
+        raise ValueError("direction_softening_delta must be finite and strictly positive.")
+    direction_tolerance_scale = float(direction_tolerance_scale)
+    if not np.isfinite(direction_tolerance_scale) or direction_tolerance_scale < 0.0:
+        raise ValueError("direction_tolerance_scale must be finite and nonnegative.")
     clock = pygame.time.Clock() if plot else None
     iteration = 0
     stress_history = []
@@ -115,7 +139,10 @@ def run_physics_simulation(min_distance,repulsion_strength,resistance,directiona
 
         nodes,cnt,wrong_direction_lists = apply_forces(
             min_distance,repulsion_strength,resistance,directional_force_magnitude,
-            nodes,directional_data, dni
+            nodes,directional_data, dni,
+            directional_objective=directional_objective,
+            direction_softening_delta=direction_softening_delta,
+            direction_tolerance_scale=direction_tolerance_scale,
         )
 
         for i,node in enumerate(nodes):
@@ -138,7 +165,10 @@ def run_physics_simulation(min_distance,repulsion_strength,resistance,directiona
     return wrong_direction_lists,stress_history,pos_history, pos_matrix
 
 
-def apply_forces(min_distance,repulsion_strength,resistance,directional_force_magnitude,nodes,directional_data, dni):
+def apply_forces(min_distance,repulsion_strength,resistance,directional_force_magnitude,nodes,directional_data, dni,
+                 directional_objective=DIRECTIONAL_OBJECTIVE_SECTOR,
+                 direction_softening_delta=MIN_DISTANCE_BASE,
+                 direction_tolerance_scale=1.0):
     """Apply forces:
       1) Repulsion
       2) Directional force = squared hinge loss gradient (paper-aligned)
@@ -150,6 +180,14 @@ def apply_forces(min_distance,repulsion_strength,resistance,directional_force_ma
         F_u = w_dir * z * ((I - r_hat r_hat^T) v_dir) / (||r|| + eps)
         F_v = -F_u
     """
+    directional_objective = normalize_directional_objective(directional_objective)
+    direction_softening_delta = float(direction_softening_delta)
+    if not np.isfinite(direction_softening_delta) or direction_softening_delta <= 0.0:
+        raise ValueError("direction_softening_delta must be finite and strictly positive.")
+    direction_tolerance_scale = float(direction_tolerance_scale)
+    if not np.isfinite(direction_tolerance_scale) or direction_tolerance_scale < 0.0:
+        raise ValueError("direction_tolerance_scale must be finite and nonnegative.")
+
     # --- 1) repulsive force ---
     for i, node_a in enumerate(nodes):
         for j, node_b in enumerate(nodes):
@@ -166,8 +204,8 @@ def apply_forces(min_distance,repulsion_strength,resistance,directional_force_ma
 
     # --- 2) directional hinge force (Updated: Angular Hinge) ---
     # 定義容忍角度 (以 radians 為單位)
-    theta_h_4 = theta_thr_4dir
-    theta_h_8 = theta_thr_8dir
+    theta_h_4 = theta_thr_4dir * direction_tolerance_scale
+    theta_h_8 = theta_thr_8dir * direction_tolerance_scale
     eps = 1e-9
 
     cnt = 0
@@ -205,17 +243,39 @@ def apply_forces(min_distance,repulsion_strength,resistance,directional_force_ma
         c_val = float(r_hat[0]*v_dir[1] - r_hat[1]*v_dir[0]) # 2D cross product
         phi = math.atan2(c_val, d_val)  # 範圍 (-pi, pi]
 
-        # 2. 判斷是否違規
+        # 2. Sector violation is retained as the reporting definition in both
+        # objective modes. Exact-direction changes the force, not evaluation.
         current_theta_h = theta_h_4 if d_name in DIR4_SIM else theta_h_8
         violation = abs(phi) - current_theta_h # 違規量 z
-        
+        if violation > 0:
+            cnt += 1
+            wrong_direction_lists.append(row)
+
+        if directional_objective == DIRECTIONAL_OBJECTIVE_EXACT:
+            _energy, force_u, force_v, _phi = exact_direction_pair_energy_force(
+                r,
+                v_dir,
+                directional_force_magnitude,
+                collision_epsilon=eps,
+            )
+            node_u.apply_force_at_world_point(tuple(force_u), node_u.position)
+            node_v.apply_force_at_world_point(tuple(force_v), node_v.position)
+            continue
+
+        if directional_objective == DIRECTIONAL_OBJECTIVE_SOFT_EXACT:
+            _energy, force_u, force_v, _phi = softened_exact_direction_pair_energy_force(
+                r,
+                v_dir,
+                directional_force_magnitude,
+                delta=direction_softening_delta,
+                collision_epsilon=eps,
+            )
+            node_u.apply_force_at_world_point(tuple(force_u), node_u.position)
+            node_v.apply_force_at_world_point(tuple(force_v), node_v.position)
+            continue
 
         if violation <= 0:
             continue # 在容忍範圍內，無力
-
-        # 3. 記錄違規
-        cnt += 1
-        wrong_direction_lists.append(row)
 
         # --- 4. 計算梯度力 (Corrected based on Math Derivation) ---
         # 根據推導，施加在 u (尾端) 的力方向，應沿著 r 的「順時針切線」方向與 sgn(phi) 的乘積。

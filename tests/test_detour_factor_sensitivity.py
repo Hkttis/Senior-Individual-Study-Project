@@ -365,8 +365,10 @@ def test_physics_eval_uses_same_scaled_distances_for_simulation_and_stress(monke
 
     monkeypatch.setattr(hpo, "main_physics_simulation", fake_simulation)
     monkeypatch.setattr(hpo, "calculate_kruskals_stress", fake_stress)
-    monkeypatch.setattr(hpo, "direction_violation_rate", lambda *_args: 0.25)
-    monkeypatch.setattr(hpo, "mean_angular_error_violations", lambda *_args: 0.125)
+    monkeypatch.setattr(hpo, "direction_violation_rate", lambda *_args, **_kwargs: 0.25)
+    monkeypatch.setattr(
+        hpo, "mean_angular_error_violations", lambda *_args, **_kwargs: 0.125
+    )
     monkeypatch.setattr(hpo, "_rmse_labels_km", lambda **_kwargs: 10.0)
 
     result, _positions, _vertices, _dni = hpo._run_physics_eval(

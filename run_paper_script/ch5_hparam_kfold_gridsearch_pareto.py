@@ -48,6 +48,7 @@ from library.config import (
     OUTPUT_DIR,
     REPULSION_STRENGTH_BASE,
     SPRING_STIFFNESS_BASE,
+    MIN_DISTANCE_BASE,
     refer_pos_sim as DEFAULT_REFER_POS_SIM,
     km2pix,
 )
@@ -67,6 +68,11 @@ from library.metrics import (
     mean_angular_error_violations,
 )
 from library.physics import main_physics_simulation
+from library.directional_objectives import (
+    DIRECTIONAL_OBJECTIVE_SECTOR,
+    mean_absolute_nominal_angular_deviation,
+    normalize_directional_objective,
+)
 from library.units import data_Li2sim, pos_matrix_sim2km
 
 
@@ -331,7 +337,11 @@ def _run_physics_eval(
     directional_force_magnitude: float,
     refer_pos_sim: Sequence[float],
     distance_scale: float = 1.0,
+    directional_objective: str = DIRECTIONAL_OBJECTIVE_SECTOR,
+    direction_softening_delta: float = MIN_DISTANCE_BASE,
+    direction_tolerance_scale: float = 1.0,
 ) -> tuple[Dict[str, float], np.ndarray, List[str], Dict[str, int]]:
+    directional_objective = normalize_directional_objective(directional_objective)
     np.random.seed(seed)
     directional_data = uploading_directional_data()
     _graph, _vertice0, _dni0, _edges0, data_li = load_ini_data_from_csv(FILE_PATHS)
@@ -355,13 +365,30 @@ def _run_physics_eval(
         repulsion_strength,
         directional_force_magnitude,
         plot=False,
+        directional_objective=directional_objective,
+        direction_softening_delta=direction_softening_delta,
+        direction_tolerance_scale=direction_tolerance_scale,
     )
 
     pos_final_y_up = np.asarray([(float(p[0]), float(p[1])) for p in pos_final_y_up], dtype=float)
     pos_final_km = pos_matrix_sim2km(pos_final_y_up.tolist())
     e_distance = float(calculate_kruskals_stress(dni, pos_final_km, data_sim))
-    e_direction = float(direction_violation_rate(pos_final_y_up, directional_data, dni))
-    e_direction_mae = float(mean_angular_error_violations(pos_final_y_up, directional_data, dni))
+    e_direction = float(
+        direction_violation_rate(
+            pos_final_y_up,
+            directional_data,
+            dni,
+            direction_tolerance_scale=direction_tolerance_scale,
+        )
+    )
+    e_direction_mae = float(
+        mean_angular_error_violations(
+            pos_final_y_up,
+            directional_data,
+            dni,
+            direction_tolerance_scale=direction_tolerance_scale,
+        )
+    )
     rmse = _rmse_labels_km(
         pos_y_up_sim=pos_final_y_up,
         dni=dni,
@@ -376,8 +403,17 @@ def _run_physics_eval(
         "E_distance_stress": e_distance,
         "E_direction_vr": e_direction,
         "E_direction_mae": e_direction_mae,
+        "E_direction_vr_reference": float(
+            direction_violation_rate(pos_final_y_up, directional_data, dni)
+        ),
+        "E_direction_mae_reference": float(
+            mean_angular_error_violations(pos_final_y_up, directional_data, dni)
+        ),
         "RMSE_km": rmse,
         "wrong_dir_count": float(len(wrong_direction_lists)),
+        "E_direction_nominal_mae_rad": float(
+            mean_absolute_nominal_angular_deviation(pos_final_y_up, directional_data, dni)
+        ),
         "last_raw_stress_trace": float(stress_history[-1]) if len(stress_history) > 0 else float("nan"),
     }
     return metrics, pos_final_y_up, vertice, dni
@@ -557,7 +593,11 @@ def _run_final_selected_model(
     final_frame_anchor_label: str | None = None,
     save_final_positions: bool = False,
     distance_scale: float = 1.0,
+    directional_objective: str = DIRECTIONAL_OBJECTIVE_SECTOR,
+    direction_softening_delta: float = MIN_DISTANCE_BASE,
+    direction_tolerance_scale: float = 1.0,
 ) -> Dict[str, object]:
+    directional_objective = normalize_directional_objective(directional_objective)
     alpha = float(selected["alpha"])
     beta = float(selected["beta"])
     _w_dir, _w_reg, spring, directional_force, repulsion = _weights_from_alpha_beta(
@@ -591,9 +631,15 @@ def _run_final_selected_model(
             directional_force_magnitude=directional_force,
             refer_pos_sim=refer_pos_sim,
             distance_scale=distance_scale,
+            directional_objective=directional_objective,
+            direction_softening_delta=direction_softening_delta,
+            direction_tolerance_scale=direction_tolerance_scale,
         )
         row = {
             "selection_rule": selection_rule,
+            "directional_objective": directional_objective,
+            "direction_softening_delta": float(direction_softening_delta),
+            "direction_tolerance_scale": float(direction_tolerance_scale),
             "distance_scale": float(distance_scale),
             "alpha": alpha,
             "beta": beta,
@@ -601,7 +647,10 @@ def _run_final_selected_model(
             "E_distance_stress": metrics["E_distance_stress"],
             "E_direction_vr": metrics["E_direction_vr"],
             "E_direction_mae": metrics["E_direction_mae"],
+            "E_direction_vr_reference": metrics["E_direction_vr_reference"],
+            "E_direction_mae_reference": metrics["E_direction_mae_reference"],
             "RMSE_final_test_km": metrics["RMSE_km"],
+            "E_direction_nominal_mae_rad": metrics["E_direction_nominal_mae_rad"],
         }
         final_rows.append(row)
         site_errors = _site_errors_km(
@@ -649,7 +698,9 @@ def _run_final_selected_model(
         )
     summary = {
         "selection_rule": selection_rule,
+        "directional_objective": directional_objective,
         "distance_scale": float(distance_scale),
+        "direction_tolerance_scale": float(direction_tolerance_scale),
         "alpha": alpha,
         "beta": beta,
         "n_seeds": int(len(seeds)),
@@ -661,6 +712,13 @@ def _run_final_selected_model(
         "E_distance_stress_mean": float(df_final["E_distance_stress"].mean()),
         "E_direction_vr_mean": float(df_final["E_direction_vr"].mean()),
         "E_direction_mae_mean": float(df_final["E_direction_mae"].mean()),
+        "E_direction_vr_reference_mean": float(
+            df_final["E_direction_vr_reference"].mean()
+        ),
+        "E_direction_mae_reference_mean": float(
+            df_final["E_direction_mae_reference"].mean()
+        ),
+        "E_direction_nominal_mae_rad_mean": float(df_final["E_direction_nominal_mae_rad"].mean()),
         "best_seed_by_final_test_rmse": best_seed,
     }
     if selection_meta:
@@ -709,10 +767,21 @@ def run_anchor_loo_gridsearch_pareto(
     generate_plots: bool = True,
     save_final_positions: bool = False,
     distance_scale: float = 1.0,
+    directional_objective: str = DIRECTIONAL_OBJECTIVE_SECTOR,
+    direction_softening_delta: float = MIN_DISTANCE_BASE,
+    direction_tolerance_scale: float = 1.0,
+    fail_on_selected_boundary: bool = False,
 ) -> Dict[str, object]:
+    directional_objective = normalize_directional_objective(directional_objective)
     distance_scale = float(distance_scale)
     if not np.isfinite(distance_scale) or distance_scale <= 0.0:
         raise ValueError("distance_scale must be finite and strictly positive.")
+    direction_softening_delta = float(direction_softening_delta)
+    if not np.isfinite(direction_softening_delta) or direction_softening_delta <= 0.0:
+        raise ValueError("direction_softening_delta must be finite and strictly positive.")
+    direction_tolerance_scale = float(direction_tolerance_scale)
+    if not np.isfinite(direction_tolerance_scale) or direction_tolerance_scale < 0.0:
+        raise ValueError("direction_tolerance_scale must be finite and nonnegative.")
     hpo_seeds = list(map(int, seeds))
     resolved_final_seeds = hpo_seeds if final_seeds is None else list(map(int, final_seeds))
     if not hpo_seeds or not resolved_final_seeds:
@@ -778,6 +847,9 @@ def run_anchor_loo_gridsearch_pareto(
                             directional_force_magnitude=directional_force,
                             refer_pos_sim=refer_pos_sim,
                             distance_scale=distance_scale,
+                            directional_objective=directional_objective,
+                            direction_softening_delta=direction_softening_delta,
+                            direction_tolerance_scale=direction_tolerance_scale,
                         )
                     except Exception as exc:
                         print(
@@ -797,6 +869,9 @@ def run_anchor_loo_gridsearch_pareto(
                             "alpha": float(alpha),
                             "beta": float(beta),
                             "distance_scale": distance_scale,
+                            "directional_objective": directional_objective,
+                            "direction_softening_delta": direction_softening_delta,
+                            "direction_tolerance_scale": direction_tolerance_scale,
                             "w_dis": float(w_dis),
                             "w_dir": float(w_dir),
                             "w_reg": float(w_reg),
@@ -808,6 +883,9 @@ def run_anchor_loo_gridsearch_pareto(
                             "E_distance_stress": metrics["E_distance_stress"],
                             "E_direction_vr": metrics["E_direction_vr"],
                             "E_direction_mae": metrics["E_direction_mae"],
+                            "E_direction_nominal_mae_rad": metrics.get(
+                                "E_direction_nominal_mae_rad", float("nan")
+                            ),
                             "RMSE_anchor_LOO_km": metrics["RMSE_km"],
                             "wrong_dir_count": metrics["wrong_dir_count"],
                             "last_raw_stress_trace": metrics["last_raw_stress_trace"],
@@ -844,6 +922,8 @@ def run_anchor_loo_gridsearch_pareto(
             df_folds_for_combo = pd.DataFrame(combo_fold_metrics)
             grid_rows.append(
                 {
+                    "directional_objective": directional_objective,
+                    "direction_softening_delta": direction_softening_delta,
                     "alpha": float(alpha),
                     "beta": float(beta),
                     "distance_scale": distance_scale,
@@ -882,6 +962,9 @@ def run_anchor_loo_gridsearch_pareto(
 
     cfg = {
         "validation": "three_anchor_leave_one_anchor_out",
+        "directional_objective": directional_objective,
+        "direction_softening_delta": direction_softening_delta,
+        "direction_tolerance_scale": direction_tolerance_scale,
         "objectives": objective_cols,
         "default_selection_rule": "pareto_one_se_balanced",
         "distance_scale": distance_scale,
@@ -954,6 +1037,21 @@ def run_anchor_loo_gridsearch_pareto(
     selection_meta["selected_on_grid_boundary"] = bool(
         selection_meta["selected_on_alpha_boundary"] or selection_meta["selected_on_beta_boundary"]
     )
+    selected_record = {
+        "directional_objective": directional_objective,
+        "alpha": selected_alpha,
+        "beta": selected_beta,
+        **selection_meta,
+    }
+    (outdir_path / "selected_candidate.json").write_text(
+        json.dumps(selected_record, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    if fail_on_selected_boundary and selection_meta["selected_on_grid_boundary"]:
+        raise RuntimeError(
+            "Selected HPO candidate lies on the search-grid boundary. "
+            "Expand the affected alpha/beta range before final evaluation, or explicitly "
+            "disable the boundary guard for a smoke test."
+        )
     _run_final_selected_model(
         selected=selected,
         anchor_labels=anchor_labels,
@@ -972,6 +1070,9 @@ def run_anchor_loo_gridsearch_pareto(
         final_frame_anchor_label=resolved_final_frame_anchor,
         save_final_positions=save_final_positions,
         distance_scale=distance_scale,
+        directional_objective=directional_objective,
+        direction_softening_delta=direction_softening_delta,
+        direction_tolerance_scale=direction_tolerance_scale,
     )
 
     print("\n=== Default Pareto candidate by one-SE balanced rule ===")

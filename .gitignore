@@ -1,17 +1,25 @@
-# Python environments and caches
+# Python and local development state
 .venv/
 .venv_codex/
 __pycache__/
 *.py[cod]
 .pytest_cache/
-
-# Local tooling and temporary files
+.tmp_pytest*/
 .matplotlib/
 .vscode/
 tmp/
 
-# Generated experiment artifacts
+# Generated results and local copies are kept outside source control.
 outputs/
 results_data/
-backups/
 paper_results/
+backups/
+presentation/
+experiments/**/runs/
+
+# Early standalone visual artifacts in the project root.
+/bootstrap_data_300.csv
+/combined_kde_density*.png
+/confidence_ellipses_*.png
+/multi_confidence_ellipses_*.png
+/interactive_map.html

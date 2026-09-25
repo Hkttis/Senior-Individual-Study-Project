@@ -65,8 +65,8 @@ OVERLAY_HANDLES = [
     Line2D([0], [0], marker="^", color="none", markerfacecolor="#222222", markeredgecolor="white", markersize=12, label="Calibration anchor"),
 ]
 NODE_HANDLES = [
-    Line2D([0], [0], marker="o", color="none", markerfacecolor="#2ca02c", markeredgecolor="white", markersize=11, label="Direction satisfied"),
-    Line2D([0], [0], marker="x", linestyle="none", color="#d62728", markerfacecolor="none", markeredgecolor="#d62728", markersize=11, markeredgewidth=2.2, label="Direction violation"),
+    Line2D([0], [0], marker="o", color="none", markerfacecolor="#0072B2", markeredgecolor="white", markersize=11, label="Direction satisfied"),
+    Line2D([0], [0], marker="x", linestyle="none", color="#D55E00", markerfacecolor="none", markeredgecolor="#D55E00", markersize=11, markeredgewidth=2.2, label="Direction violation"),
 ]
 
 
@@ -375,7 +375,7 @@ def _draw_error_map(ax, points, edge_errors, wrong_nodes, edge_norm, edge_cmap, 
             points[satisfied_idx, 1],
             s=48,
             marker="o",
-            c="#2ca02c",
+            c="#0072B2",
             edgecolors="white",
             linewidths=0.7,
             zorder=3,
@@ -386,7 +386,7 @@ def _draw_error_map(ax, points, edge_errors, wrong_nodes, edge_norm, edge_cmap, 
             points[wrong_idx, 1],
             s=80,
             marker="x",
-            c="#d62728",
+            c="#D55E00",
             linewidths=2.0,
             zorder=4,
         )
@@ -588,7 +588,7 @@ def main() -> None:
     edge_vmax = max(float(np.quantile(edge_error_values, 0.95)), 0.03) if edge_error_values else 0.03
     edge_norm = colors.Normalize(vmin=0.0, vmax=edge_vmax)
     overlay_cmap = plt.get_cmap("plasma")
-    edge_cmap = plt.get_cmap("RdYlGn_r")
+    edge_cmap = plt.get_cmap("cividis")
 
     overlay_shared_extent = _combined_overlay_extent(model_points, targets, dni, anchors, tests, pad_frac=0.075)
     overlay_label_font = _cjk_font(args.overlay_label_size)

@@ -25,10 +25,12 @@ from scripts.build_manuscript_ready_results import (
     DETOUR_DIR,
     POLISH_DIR,
     REPRESENTATIVE_DIR,
+    TOLERANCE_DIR,
     VIS_DIR,
     build_table_1,
     build_table_2,
     build_table_3,
+    latex_escape,
     load_runs,
     sha256,
 )
@@ -77,8 +79,61 @@ def _check_table_formats(outdir: Path, failures: list[str]) -> None:
                 failures.append(f"missing manuscript table format: {path}")
         if md_path.exists() and "|" not in md_path.read_text(encoding="utf-8"):
             failures.append(f"Markdown table is malformed: {md_path}")
-        if tex_path.exists() and "\\begin{tabular}" not in tex_path.read_text(encoding="utf-8"):
-            failures.append(f"LaTeX table is malformed: {tex_path}")
+        if tex_path.exists():
+            tex = tex_path.read_text(encoding="utf-8")
+            has_table = "\\begin{tabular}" in tex or "\\begin{tabularx}" in tex
+            if not has_table:
+                failures.append(f"LaTeX table is malformed: {tex_path}")
+        if stem in {
+            "table_2_progressive_component_effects",
+            "table_3_information_matched_optimizer_comparison",
+        }:
+            for path in (csv_path, md_path, tex_path):
+                normalized_text = path.read_text(encoding="utf-8-sig").replace(r"\\", " ") if path.exists() else ""
+                if path.exists() and "Crowding Violation Rate" not in normalized_text:
+                    failures.append(f"protocol-required CVR label is missing: {path}")
+
+
+def _check_display_values_in_text(
+    stem: Path,
+    expected: pd.DataFrame,
+    failures: list[str],
+) -> None:
+    md = stem.with_suffix(".md").read_text(encoding="utf-8")
+    tex = stem.with_suffix(".tex").read_text(encoding="utf-8")
+    for value in expected.fillna("").astype(str).to_numpy().ravel():
+        if not value:
+            continue
+        if value not in md:
+            failures.append(f"Markdown table omits expected displayed value: {stem.name}/{value}")
+        if latex_escape(value) not in tex:
+            failures.append(f"LaTeX table omits expected displayed value: {stem.name}/{value}")
+
+
+def _check_metric_contract(
+    panel_b: pd.DataFrame,
+    table3: pd.DataFrame,
+    audit2: pd.DataFrame,
+    audit3: pd.DataFrame,
+    failures: list[str],
+) -> None:
+    cvr_label = "Crowding Violation Rate (τ = 0.10)"
+    paired_cvr_label = f"Δ{cvr_label} [95% CI]"
+    metric_key = "crowding_violation_rate_tau_0p1"
+    if paired_cvr_label not in panel_b.columns:
+        failures.append("Table 2 omits the protocol-required paired Crowding Violation Rate")
+    if cvr_label not in table3.columns:
+        failures.append("Table 3 omits the protocol-required Crowding Violation Rate")
+    if int(audit2["metric"].eq(metric_key).sum()) != 3:
+        failures.append("Table 2 exact-value audit must contain CVR for all three component effects")
+    for required_metric in (
+        metric_key,
+        "collapse_node_rate_tau_0p1",
+        "nnd_q05_km",
+        "distance_edge_crossing_rate",
+    ):
+        if int(audit3["metric"].eq(required_metric).sum()) != 6:
+            failures.append(f"Table 3 exact-value audit must contain {required_metric} for all six compared models")
 
 
 def verify_snapshot(outdir: Path) -> tuple[list[str], dict]:
@@ -93,6 +148,7 @@ def verify_snapshot(outdir: Path) -> tuple[list[str], dict]:
     expected2 = pd.concat([panel_a.assign(Panel="A"), panel_b.assign(Panel="B")], ignore_index=True, sort=False)
     expected2 = expected2[["Panel", *[column for column in expected2.columns if column != "Panel"]]]
     expected3, audit3 = build_table_3(as_runs, bfgs_runs)
+    _check_metric_contract(panel_b, expected3, audit2, audit3, failures)
     for name, expected in (
         ("table_1_rmse_benchmark", expected1),
         ("table_2_progressive_component_effects", expected2),
@@ -103,6 +159,7 @@ def verify_snapshot(outdir: Path) -> tuple[list[str], dict]:
             failures.append(f"missing main table: {path}")
         else:
             _assert_frame(pd.read_csv(path, dtype=str, keep_default_na=False), expected, name, failures)
+            _check_display_values_in_text(path.with_suffix(""), expected, failures)
     exact_specs = (
         (outdir / "06_verification" / "table_1_exact_values.csv", audit1),
         (outdir / "06_verification" / "table_2_exact_values.csv", audit2),
@@ -143,13 +200,34 @@ def verify_snapshot(outdir: Path) -> tuple[list[str], dict]:
     if list(plot3.columns) != list(source3.columns) or not np.allclose(plot3.select_dtypes(include=[np.number]), source3.select_dtypes(include=[np.number]), atol=1e-12, rtol=1e-12) or not plot3["split_id"].equals(source3["split_id"]):
         failures.append("Figure 3 plotted data differ from anchor_split_summary.csv")
     plot4 = pd.read_csv(outdir / "02_main_figures" / "figure_4_plot_data.csv")
-    source4 = pd.read_csv(DETOUR_DIR / "detour_scenario_summary.csv", encoding="utf-8-sig")[list(plot4.columns)].sort_values("kappa").reset_index(drop=True)
+    source4 = pd.read_csv(DETOUR_DIR / "detour_paired_comparisons.csv", encoding="utf-8-sig")
+    source4 = source4.loc[source4["metric"].eq("RMSE_final_test_km"), list(plot4.columns)].sort_values("kappa").reset_index(drop=True)
+    reference_row = pd.DataFrame(
+        [{"kappa": 1.0, "reference_kappa": 1.0, "metric": "RMSE_final_test_km", "n_pairs": 100,
+          "difference_mean": 0.0, "difference_std": 0.0, "difference_ci95_low": 0.0,
+          "difference_ci95_high": 0.0, "win_rate_lower": 0.0}]
+    )
+    source4 = pd.concat([source4, reference_row], ignore_index=True).sort_values("kappa").reset_index(drop=True)
     for column in plot4.columns:
         if pd.api.types.is_numeric_dtype(source4[column]):
             if not np.allclose(plot4[column], source4[column], atol=1e-12, rtol=1e-12, equal_nan=True):
                 failures.append(f"Figure 4 plotted data mismatch: {column}")
         elif not plot4[column].fillna("").astype(str).equals(source4[column].fillna("").astype(str)):
             failures.append(f"Figure 4 plotted labels mismatch: {column}")
+    plot5 = pd.read_csv(outdir / "02_main_figures" / "figure_5_plot_data.csv")
+    source5 = pd.read_csv(
+        TOLERANCE_DIR / "direction_tolerance_paired_comparisons.csv",
+        encoding="utf-8-sig",
+    )
+    source5 = source5.loc[
+        source5["metric"].eq("RMSE_final_test_km"), list(plot5.columns)
+    ].sort_values("direction_tolerance_scale").reset_index(drop=True)
+    for column in plot5.columns:
+        if pd.api.types.is_numeric_dtype(source5[column]):
+            if not np.allclose(plot5[column], source5[column], atol=1e-12, rtol=1e-12, equal_nan=True):
+                failures.append(f"Figure 5 plotted data mismatch: {column}")
+        elif not plot5[column].fillna("").astype(str).equals(source5[column].fillna("").astype(str)):
+            failures.append(f"Figure 5 plotted labels mismatch: {column}")
     visual_failures, visual_checks = verify_section_6_5_visualizations(
         as_outdir=AS_DIR,
         representative_dir=REPRESENTATIVE_DIR,
@@ -234,8 +312,7 @@ def verify_snapshot(outdir: Path) -> tuple[list[str], dict]:
         "figure_1a_physics_full_vs_bfgs_spatial_reconstruction",
         "figure_1b_smacof_vs_dc_smacof_spatial_reconstruction",
         "figure_2_bfgs_polishing_objective_rmse",
-        "figure_3_anchor_split_sensitivity",
-        "figure_4_detour_rmse_sensitivity",
+        "figure_3_anchor_split_detour_factor_direction_tolerance_sensitivity",
     ):
         for suffix in (".png", ".svg"):
             _check_render_file(outdir / "02_main_figures" / f"{figure}{suffix}", failures)
@@ -252,8 +329,9 @@ def verify_snapshot(outdir: Path) -> tuple[list[str], dict]:
     checks["main_figures"] = {
         "figure_1a_1b": "four model-specific representative runs; all plotted positions match formal sources and BFGS metrics were independently recomputed",
         "figure_2": "all 100 paired endpoints exactly copied from polishing_runs.csv",
-        "figure_3": "all 45 split means and within-split SDs exactly copied from anchor summary",
-        "figure_4": "all 13 kappa means and bootstrap bounds exactly copied from detour summary",
+        "figure_3_panel_a": "all 45 split means and within-split SDs exactly copied from anchor summary",
+        "figure_3_panel_b": "all 12 paired kappa-vs-reference RMSE differences and paired-bootstrap bounds exactly copied from detour paired comparisons, plus the definitional kappa=1 reference point at zero",
+        "figure_3_panel_c": "all seven lambda-vs-reference RMSE differences and paired-bootstrap bounds exactly copied from direction-tolerance paired comparisons, including the definitional lambda=1 reference point at zero",
     }
 
     source_map_path = outdir / "source_map.csv"

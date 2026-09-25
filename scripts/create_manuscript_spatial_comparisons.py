@@ -120,7 +120,7 @@ def _save_group_figure(
     output_stem: Path,
 ) -> None:
     overlay_cmap = plt.get_cmap("plasma")
-    edge_cmap = plt.get_cmap("RdYlGn_r")
+    edge_cmap = plt.get_cmap("cividis")
     fig, axes = plt.subplots(2, 2, figsize=(16.8, 12.2), constrained_layout=True)
     overlay_font = _cjk_font(10.4)
     error_font = _cjk_font(9.2)
@@ -141,10 +141,24 @@ def _save_group_figure(
         _relax_annotations(fig, axes[1, col], error_annotations, iterations=250, max_offset=76.0)
 
     fig.canvas.draw()
+    bottom_title_y = max(axes[1, col].get_position().y1 for col in range(2)) + 0.008
+    fig.set_layout_engine(None)
+    bottom_row_shift = 0.025
+    bottom_row_shift_x = 0.043 if "physics_full_vs_bfgs" in output_stem.name else 0.0
+    for col in range(2):
+        position = axes[1, col].get_position()
+        axes[1, col].set_position(
+            [
+                position.x0 + bottom_row_shift_x,
+                position.y0 + bottom_row_shift,
+                position.width,
+                position.height,
+            ]
+        )
     top_positions = [axes[0, col].get_position() for col in range(2)]
     bottom_positions = [axes[1, col].get_position() for col in range(2)]
     top_y = max(position.y1 for position in top_positions) + 0.014
-    bottom_y = max(position.y1 for position in bottom_positions) + 0.008
+    bottom_y = bottom_title_y
     column_centres = (0.285, 0.705)
     for col, (_position, record) in enumerate(zip(top_positions, records)):
         x = column_centres[col]
@@ -166,7 +180,22 @@ def _save_group_figure(
     cbar2 = fig.colorbar(edge_map, ax=axes[1, :], orientation="vertical", fraction=0.015, pad=0.012)
     cbar2.set_label("Distance-edge relative error", fontsize=11)
     cbar2.ax.tick_params(labelsize=9)
-    fig.legend(handles=OVERLAY_HANDLES + NODE_HANDLES, loc="lower center", ncol=3, frameon=False, fontsize=10, bbox_to_anchor=(0.5, 0.002))
+    fig.legend(
+        handles=OVERLAY_HANDLES,
+        loc="lower center",
+        ncol=4,
+        frameon=False,
+        fontsize=10,
+        bbox_to_anchor=(0.5, 0.025),
+    )
+    fig.legend(
+        handles=NODE_HANDLES,
+        loc="lower center",
+        ncol=2,
+        frameon=False,
+        fontsize=10,
+        bbox_to_anchor=(0.5, 0.002),
+    )
     for suffix in ("png", "svg"):
         fig.savefig(output_stem.with_suffix(f".{suffix}"), dpi=300, bbox_inches="tight")
     plt.close(fig)

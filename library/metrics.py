@@ -280,7 +280,14 @@ def rmse_km_from_pixels(pos_px, refer_pos, dni, gt_lonlat):
 # Direction error metrics (Angular hinge / atan2-based)
 # =========================================================
 
-def _direction_violation_deltas(pos_matrix_px, directional_data, dni, eps=1e-9):
+def _direction_violation_deltas(
+    pos_matrix_px,
+    directional_data,
+    dni,
+    eps=1e-9,
+    *,
+    direction_tolerance_scale=1.0,
+):
     """
     Internal helper:
     Iterate directional constraints and compute deltas:
@@ -289,6 +296,10 @@ def _direction_violation_deltas(pos_matrix_px, directional_data, dni, eps=1e-9):
     Returns:
       total_valid_edges, n_violations, deltas(list of delta for violated edges)
     """
+    tolerance_scale = float(direction_tolerance_scale)
+    if not math.isfinite(tolerance_scale) or tolerance_scale < 0.0:
+        raise ValueError("direction_tolerance_scale must be finite and nonnegative.")
+
     # pos_matrix_px is expected to be (n,2) in y-up; be tolerant to list/Vec2d input
     try:
         pos = np.asarray(pos_matrix_px, dtype=float)
@@ -339,7 +350,9 @@ def _direction_violation_deltas(pos_matrix_px, directional_data, dni, eps=1e-9):
         c_val = r_hat_x * v_y - r_hat_y * v_x
         phi = math.atan2(c_val, d_val)  # (-pi, pi]
 
-        theta_h = theta_thr_4dir if (d_name in DIR4_SIM) else theta_thr_8dir
+        theta_h = (
+            theta_thr_4dir if (d_name in DIR4_SIM) else theta_thr_8dir
+        ) * tolerance_scale
         delta = builtins.max(0.0, abs(phi) - theta_h)
 
         total += 1
@@ -350,25 +363,39 @@ def _direction_violation_deltas(pos_matrix_px, directional_data, dni, eps=1e-9):
     return total, n_viol, deltas
 
 
-def direction_violation_rate(pos_matrix_px, directional_data, dni):
+def direction_violation_rate(
+    pos_matrix_px, directional_data, dni, *, direction_tolerance_scale=1.0
+):
     """
     Violation Rate:
       VR = (#edges with delta>0) / (#valid directional edges)
     If no valid edges, return 0.0.
     """
-    total, n_viol, _ = _direction_violation_deltas(pos_matrix_px, directional_data, dni)
+    total, n_viol, _ = _direction_violation_deltas(
+        pos_matrix_px,
+        directional_data,
+        dni,
+        direction_tolerance_scale=direction_tolerance_scale,
+    )
     if total <= 0:
         return 0.0
     return float(n_viol) / float(total)
 
 
-def mean_angular_error_violations(pos_matrix_px, directional_data, dni):
+def mean_angular_error_violations(
+    pos_matrix_px, directional_data, dni, *, direction_tolerance_scale=1.0
+):
     """
     Mean Angular Error on violated edges:
       MAE_theta = mean(delta) over edges with delta>0
     If no violated edges, return 0.0 (avoid downstream stats issues).
     """
-    _, n_viol, deltas = _direction_violation_deltas(pos_matrix_px, directional_data, dni)
+    _, n_viol, deltas = _direction_violation_deltas(
+        pos_matrix_px,
+        directional_data,
+        dni,
+        direction_tolerance_scale=direction_tolerance_scale,
+    )
     if n_viol <= 0:
         return 0.0
     return float(np.mean(np.asarray(deltas, dtype=float)))

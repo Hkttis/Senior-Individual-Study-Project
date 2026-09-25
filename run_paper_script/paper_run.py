@@ -48,9 +48,23 @@ Detour-factor sensitivity preflight and formal experiment:
 python -m scripts.check_detour_sensitivity_preflight --outdir outputs/ch5_detour_factor_sensitivity_formal_13scenarios_hpo10_final100
 python -m run_paper_script.paper_run ch5-detour-sensitivity --outdir outputs/ch5_detour_factor_sensitivity_formal_13scenarios_hpo10_final100
 
+Sector-based versus exact-direction isolated control:
+python -m scripts.check_sector_exact_control_preflight
+python -m run_paper_script.paper_run ch5-sector-exact-control --outdir outputs/ch5_sector_exact_control_hpo10_final100
+python -m scripts.verify_sector_exact_control --outdir outputs/ch5_sector_exact_control_hpo10_final100 --formal
+
+Softened exact-direction controls (delta=0.1; new outputs only):
+python -m run_paper_script.paper_run ch5-sector-soft-exact-control --direction-softening-delta 0.1 --outdir outputs/ch5_sector_soft_exact_control_delta0p1_hpo10_final100
+python -m run_paper_script.paper_run ch5-matched-soft-exact-controls --blocks physics_distdir --n-seeds 100 --workers 4 --direction-softening-delta 0.1 --outdir outputs/ch5_soft_exact_distdir_delta0p1_100seeds
+python -m run_paper_script.paper_run ch5-matched-soft-exact-controls --blocks bfgs_full --n-seeds 100 --workers 4 --direction-softening-delta 0.1 --outdir outputs/ch5_soft_exact_bfgs_delta0p1_100seeds
+
 Fixed-hyperparameter detour sensitivity (alpha=1, beta=-0.5; 100 paired seeds):
 python -m scripts.check_detour_sensitivity_preflight --fixed-alpha 1 --fixed-beta -0.5 --outdir outputs/ch5_detour_factor_sensitivity_fixed_alpha_1_beta_-0.5_13scenarios_100seeds
 python -m run_paper_script.paper_run ch5-detour-sensitivity --fixed-alpha 1 --fixed-beta -0.5 --outdir outputs/ch5_detour_factor_sensitivity_fixed_alpha_1_beta_-0.5_13scenarios_100seeds
+
+Direction-tolerance sensitivity (lambda=0/6,...,6/6; HPO10 and final100):
+python -m scripts.check_direction_tolerance_sensitivity_preflight --outdir outputs/ch5_direction_tolerance_sensitivity_hpo10_final100
+python -m run_paper_script.paper_run ch5-direction-tolerance-sensitivity --outdir outputs/ch5_direction_tolerance_sensitivity_hpo10_final100
 
 Formal HPO grid:
 python -m run_paper_script.paper_run ch5-hparam-kfold --seeds 0,1,2,3,4,5,6,7,8,9 --alpha-min -1 --alpha-max 1.5 --alpha-step 0.5 --beta-min -2 --beta-max 0.5 --beta-step 0.5 --outdir outputs/ch5_hparam_anchor_loo_grid_lcc_sitebounds_36x10
@@ -92,6 +106,7 @@ python -m run_paper_script.paper_run ch6-map
 
 from __future__ import annotations
 
+import importlib
 import runpy
 import sys
 
@@ -102,6 +117,17 @@ def _as_mod(module: str) -> None:
     We use `runpy` so we don't depend on OS-specific shelling.
     """
     runpy.run_module(module, run_name="__main__")
+
+
+def _call_module_main(module: str) -> None:
+    """Import a module under its real name before calling its CLI entrypoint.
+
+    Windows multiprocessing must be able to import worker functions by their
+    module-qualified names. Running such a module as nested ``__main__`` makes
+    its workers unpicklable when they are submitted to a process pool.
+    """
+    imported = importlib.import_module(module)
+    imported.main()
 
 
 def main() -> None:
@@ -143,6 +169,14 @@ def main() -> None:
         _as_mod("run_paper_script.ch5_anchor_split_robustness")
     elif cmd == "ch5-detour-sensitivity":
         _as_mod("run_paper_script.ch5_detour_factor_sensitivity")
+    elif cmd == "ch5-direction-tolerance-sensitivity":
+        _as_mod("run_paper_script.ch5_direction_tolerance_sensitivity")
+    elif cmd == "ch5-sector-exact-control":
+        _as_mod("run_paper_script.ch5_sector_exact_control")
+    elif cmd == "ch5-sector-soft-exact-control":
+        _as_mod("run_paper_script.ch5_sector_soft_exact_control")
+    elif cmd == "ch5-matched-soft-exact-controls":
+        _call_module_main("run_paper_script.ch5_matched_soft_exact_controls")
     elif cmd == "ch5-dc-hparam":
         _as_mod("run_paper_script.ch5_dc_smacof_hparam")
     elif cmd == "ch5-dc-review":

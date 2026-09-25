@@ -435,7 +435,69 @@ def _paired_comparisons(all_runs: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _save_plots(summary: pd.DataFrame, outdir: Path) -> None:
+def _save_paired_rmse_plot(paired: pd.DataFrame, outdir: Path) -> None:
+    """Plot same-seed RMSE contrasts against the unscaled kappa=1 reference."""
+    if paired.empty:
+        return
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    rmse = paired.loc[paired["metric"].eq("RMSE_final_test_km")].copy()
+    if len(rmse) != 12 or rmse["kappa"].nunique() != 12:
+        raise ValueError("Paired detour RMSE plot requires 12 contrasts against kappa=1.")
+    if not (rmse["n_pairs"].astype(int) == 100).all():
+        raise ValueError("Paired detour RMSE plot requires 100 matched seeds per contrast.")
+
+    reference = pd.DataFrame(
+        [
+            {
+                "kappa": 1.0,
+                "difference_mean": 0.0,
+                "difference_ci95_low": 0.0,
+                "difference_ci95_high": 0.0,
+            }
+        ]
+    )
+    plotted = pd.concat([rmse, reference], ignore_index=True).sort_values("kappa")
+    x = plotted["kappa"].to_numpy(float)
+    y = plotted["difference_mean"].to_numpy(float)
+    lo = plotted["difference_ci95_low"].to_numpy(float)
+    hi = plotted["difference_ci95_high"].to_numpy(float)
+
+    fig, ax = plt.subplots(figsize=(11.8, 7.0))
+    ax.errorbar(
+        x,
+        y,
+        yerr=np.vstack((y - lo, hi - y)),
+        marker="o",
+        markersize=5.0,
+        linewidth=1.8,
+        elinewidth=1.0,
+        capsize=2.5,
+        color="#1769aa",
+        label="Paired mean difference (95% CI)",
+    )
+    ax.axhline(
+        0.0,
+        color="#D55E00",
+        linestyle="--",
+        linewidth=1.4,
+        label="κ = 1.00 reference",
+    )
+    ax.set_xlim(0.69, 1.01)
+    ax.set_xlabel("Distance scaling factor, κ")
+    ax.set_ylabel("Paired ΔRMSE vs κ = 1.00 (km)")
+    ax.legend(frameon=False, loc="upper left")
+    ax.grid(True, alpha=0.2)
+    fig.tight_layout()
+    for suffix in ("png", "svg"):
+        fig.savefig(outdir / f"detour_paired_rmse_sensitivity.{suffix}", dpi=300)
+    plt.close(fig)
+
+
+def _save_plots(summary: pd.DataFrame, outdir: Path, paired: pd.DataFrame | None = None) -> None:
     if summary.empty:
         return
     import matplotlib
@@ -504,6 +566,9 @@ def _save_plots(summary: pd.DataFrame, outdir: Path) -> None:
         fig.savefig(outdir / f"detour_secondary_metrics.{suffix}", dpi=220)
     plt.close(fig)
 
+    if paired is not None:
+        _save_paired_rmse_plot(paired, outdir)
+
 
 def _write_aggregate(
     *,
@@ -542,7 +607,7 @@ def _write_aggregate(
             "stress_warning": "Stress is evaluated against each scenario's scaled distance targets.",
         },
     )
-    _save_plots(summary, outdir)
+    _save_plots(summary, outdir, paired)
 
 
 def run_detour_factor_sensitivity(
