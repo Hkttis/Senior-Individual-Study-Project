@@ -18,17 +18,24 @@ points; it does not delete old implementations or change recorded results.
   Some exports rely on helpers in older-looking scripts. Do not remove an
   individual module based only on its filename.
 - `tests/`: regression checks. Synthetic fixtures are intentional test data.
+  Two optional output-contract checks skip when their prior smoke-run folders
+  are absent; they are not model-computation failures. Their prerequisites are
+  documented in the individual test modules.
 
 ## Supplemental and historical code
 
 - `experiments/` contains isolated audits, including DC-SMACOF historical
   snapshots and all-sites BFGS diagnostics. These are not the formal model
   comparison entry points.
-- `run_paper_script/ch6_interaction_map.py`, `scripts/spring_main.py`,
-  `scripts/spring_confidence.py`, `scripts/multi_spring_confidence_ellipse.py`,
-  and `scripts/paper_run_tmp.py` are retained for historical or exploratory
-  use. They are excluded from the documented formal workflow. The interactive
-  map remains callable with `ch6-map` only when explicitly requested.
+- `experiments/dc_smacof_wang2017_audit/legacy_v3_diagnostic.py` and its
+  `snapshots/dc_smacof_copy_20260403.py` preserve the April diagnostic code.
+  The former uses an obsolete graph-row interface and is not a current pytest
+  test or an executable reproduction of the formal DC-SMACOF experiment.
+- Early standalone utilities are in `experiments/legacy_scripts/`. They are
+  retained for historical or exploratory use and are not formal workflow
+  entry points. `run_paper_script/ch6_interaction_map.py` and
+  `scripts/execute_interaction.py` still support the explicitly requested
+  `ch6-map` command.
 - `scripts/create_section_6_5_visual_prototype.py` has a historical name but
   is still imported by manuscript spatial comparison and verification code;
   it is active and must not be moved without updating those imports.
