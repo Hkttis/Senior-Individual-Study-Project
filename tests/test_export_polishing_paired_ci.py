@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 
 from scripts.export_polishing_paired_ci import calculate_paired_ci
+from run_paper_script.ch5_ablation_study import _bootstrap_ci_mean
 
 
 def _runs():
@@ -49,3 +50,17 @@ def test_paired_ci_rejects_nonfinite_and_incomplete_formal_runs():
         calculate_paired_ci(runs, list(range(100)))
     with pytest.raises(ValueError, match="do not match"):
         calculate_paired_ci(_runs().iloc[:-1], list(range(100)))
+
+
+def test_paired_ci_matches_progressive_chain_bootstrap_defaults():
+    runs = _runs()
+    runs["after_RMSE_test_km_posthoc"] += np.arange(100) / 10
+    runs["delta_RMSE_test_km_posthoc"] += np.arange(100) / 10
+    _paired, summary = calculate_paired_ci(runs, list(range(100)))
+    delta = runs["delta_RMSE_test_km_posthoc"].to_numpy(float)
+    lo, hi = _bootstrap_ci_mean(delta)
+    row = summary.loc[summary["source_column"] == "RMSE_test_km_posthoc"].iloc[0]
+    assert row["paired_mean_ci95_lower"] == pytest.approx(lo)
+    assert row["paired_mean_ci95_upper"] == pytest.approx(hi)
+    assert row["bootstrap_resamples"] == 2000
+    assert row["bootstrap_seed"] == 0
