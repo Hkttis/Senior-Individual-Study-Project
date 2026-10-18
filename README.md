@@ -90,6 +90,10 @@ record; a Git checkout alone does not contain every numerical run or manuscript 
 
 ## Scope
 
+For the implemented units, effective objective coefficients, fixed-anchor BFGS,
+and the provenance of polishing values and paired confidence intervals, see the
+[manuscript implementation note](docs/primary_objective_implementation_for_manuscript_review.md).
+
 The reconstruction remains conditional on route interpretation, site identification, angular
 tolerance, anchor selection, and hyperparameter choices. Repeated candidate runs do not describe
 the full feasible solution space or a probability distribution over historical locations. The
