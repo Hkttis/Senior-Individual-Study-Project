@@ -20,7 +20,7 @@ METRICS = (
     ("objective_total", "objective value", "objective units"),
     ("RMSE_test_km_posthoc", "held-out test RMSE", "km"),
 )
-N_BOOT = 2_000
+N_BOOT = 10_000
 BOOTSTRAP_SEED = 0
 
 
@@ -53,7 +53,7 @@ def calculate_paired_ci(runs: pd.DataFrame, configured_seeds: list[int]) -> tupl
         paired[f"before_{key}"] = before
         paired[f"after_{key}"] = after
         paired[f"delta_{key}"] = delta
-        lo, hi = _bootstrap_ci_mean(delta)
+        lo, hi = _bootstrap_ci_mean(delta, n_boot=N_BOOT, seed=BOOTSTRAP_SEED)
         summary.append(
             {
                 "metric": label,

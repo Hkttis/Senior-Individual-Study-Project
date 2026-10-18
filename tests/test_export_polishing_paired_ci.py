@@ -52,15 +52,15 @@ def test_paired_ci_rejects_nonfinite_and_incomplete_formal_runs():
         calculate_paired_ci(_runs().iloc[:-1], list(range(100)))
 
 
-def test_paired_ci_matches_progressive_chain_bootstrap_defaults():
+def test_paired_ci_matches_bfgs_comparison_bootstrap_settings():
     runs = _runs()
     runs["after_RMSE_test_km_posthoc"] += np.arange(100) / 10
     runs["delta_RMSE_test_km_posthoc"] += np.arange(100) / 10
     _paired, summary = calculate_paired_ci(runs, list(range(100)))
     delta = runs["delta_RMSE_test_km_posthoc"].to_numpy(float)
-    lo, hi = _bootstrap_ci_mean(delta)
+    lo, hi = _bootstrap_ci_mean(delta, n_boot=10_000, seed=0)
     row = summary.loc[summary["source_column"] == "RMSE_test_km_posthoc"].iloc[0]
     assert row["paired_mean_ci95_lower"] == pytest.approx(lo)
     assert row["paired_mean_ci95_upper"] == pytest.approx(hi)
-    assert row["bootstrap_resamples"] == 2000
+    assert row["bootstrap_resamples"] == 10_000
     assert row["bootstrap_seed"] == 0
