@@ -59,6 +59,8 @@ def test_translation_changes_annotations_but_not_overlay_or_error_map_geometry()
             for old, new in zip(original.collections, translated.collections, strict=True):
                 np.testing.assert_array_equal(old.get_offsets(), new.get_offsets())
                 np.testing.assert_array_equal(old.get_facecolors(), new.get_facecolors())
+        assert all(ann.get_clip_on() for ann in axes[0, 0].texts)
+        assert not any(ann.get_clip_on() for ann in axes[0, 1].texts)
     finally:
         plt.close(fig)
 

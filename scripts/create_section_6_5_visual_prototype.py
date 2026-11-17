@@ -348,7 +348,10 @@ def _draw_overlay(
         p = points[dni[label]]
         ax.scatter(p[0], p[1], s=104, marker="^", color="#222222", edgecolors="white", linewidths=0.75, zorder=6)
         label_entries.append((label, p[0], p[1]))
-    annotations = _annotate_entries(ax, label_entries, label_font, zorder=8, display_labels=display_labels)
+    annotations = _annotate_entries(
+        ax, label_entries, label_font, zorder=8,
+        clip_on=display_labels is None, display_labels=display_labels,
+    )
     if draw_title:
         ax.set_title(
             f"{DISPLAY_NAMES.get(record['variant'], record['variant'])}\n{_format_metrics(record)}",
