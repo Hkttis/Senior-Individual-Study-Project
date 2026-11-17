@@ -232,6 +232,7 @@ def _annotate_entries(
     color: str = "#222222",
     zorder: int = 10,
     clip_on: bool = True,
+    display_labels: dict[str, str] | None = None,
 ):
     annotations = []
     for idx, (label, x, y) in enumerate(entries):
@@ -239,7 +240,7 @@ def _annotate_entries(
         ha = "left" if dx >= 0 else "right"
         va = "bottom" if dy >= 0 else "top"
         annotations.append(ax.annotate(
-            str(label),
+            str(label) if display_labels is None else display_labels[label],
             xy=(x, y),
             xytext=(dx, dy),
             textcoords="offset points",
@@ -328,6 +329,7 @@ def _draw_overlay(
     title_fontsize: float = 10.0,
     title_y: float | None = None,
     draw_title: bool = True,
+    display_labels: dict[str, str] | None = None,
 ):
     ax.scatter(points[:, 0], points[:, 1], s=15, c="#c9c9c9", edgecolors="none", alpha=0.40, zorder=1)
     label_entries = []
@@ -346,7 +348,7 @@ def _draw_overlay(
         p = points[dni[label]]
         ax.scatter(p[0], p[1], s=104, marker="^", color="#222222", edgecolors="white", linewidths=0.75, zorder=6)
         label_entries.append((label, p[0], p[1]))
-    annotations = _annotate_entries(ax, label_entries, label_font, zorder=8)
+    annotations = _annotate_entries(ax, label_entries, label_font, zorder=8, display_labels=display_labels)
     if draw_title:
         ax.set_title(
             f"{DISPLAY_NAMES.get(record['variant'], record['variant'])}\n{_format_metrics(record)}",
@@ -357,7 +359,10 @@ def _draw_overlay(
     return annotations
 
 
-def _draw_error_map(ax, points, edge_errors, wrong_nodes, edge_norm, edge_cmap, vertice, label_font, *, clip_labels: bool = True):
+def _draw_error_map(
+    ax, points, edge_errors, wrong_nodes, edge_norm, edge_cmap, vertice, label_font, *,
+    clip_labels: bool = True, display_labels: dict[str, str] | None = None,
+):
     for i, j, err in edge_errors:
         ax.plot(
             [points[i, 0], points[j, 0]],
@@ -396,6 +401,7 @@ def _draw_error_map(ax, points, edge_errors, wrong_nodes, edge_norm, edge_cmap, 
         label_font,
         zorder=5,
         clip_on=clip_labels,
+        display_labels=display_labels,
     )
 
 

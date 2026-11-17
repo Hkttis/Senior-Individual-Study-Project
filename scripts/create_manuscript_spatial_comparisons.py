@@ -7,10 +7,12 @@ rule as the progressive AS visualizations.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import sys
 from pathlib import Path
+from textwrap import fill
 
 import matplotlib
 
@@ -19,6 +21,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import cm, colors
+from matplotlib.font_manager import FontProperties
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +35,6 @@ from run_paper_script.ch5_ablation_progressive import _target_positions_sim
 from scripts.create_section_6_5_visual_prototype import (
     NODE_HANDLES,
     OVERLAY_HANDLES,
-    _cjk_font,
     _combined_overlay_extent,
     _distance_edge_errors,
     _draw_error_map,
@@ -50,6 +52,24 @@ SELECTION_METRICS = (
     "E_direction_mae",
     "RMSE_test_km",
 )
+COUNTRY_NAMES_PATH = PROJECT_ROOT / "data" / "country_display_names_yu2006.csv"
+
+
+def _load_country_display_names(path: Path, vertices: list[str]) -> dict[str, str]:
+    """Load the model key and English spelling columns from the author's checklist."""
+    names = {}
+    with path.open(encoding="utf-8-sig", newline="") as file:
+        for row in csv.DictReader(file):
+            key = row["model_name"]
+            value = row["english_name"].strip()
+            if not key or not value or key in names:
+                raise ValueError(f"Empty or duplicate country display-name entry: {key!r}")
+            names[key] = value
+    if names.keys() != set(vertices):
+        missing = set(vertices) - names.keys()
+        extra = names.keys() - set(vertices)
+        raise ValueError(f"Country display names do not match model nodes: missing={sorted(missing)}, extra={sorted(extra)}")
+    return names
 
 
 def _sha256(path: Path) -> str:
@@ -103,12 +123,25 @@ def _record_metrics_text(record: dict) -> str:
     )
 
 
+def _keep_labels_left_of_colorbar(fig, annotations, colorbar_ax, *, gap_points: float = 6.0) -> None:
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    points_per_pixel = 72.0 / fig.dpi
+    right_edge = colorbar_ax.bbox.x0 - gap_points / points_per_pixel
+    for annotation in annotations:
+        overflow = annotation.get_window_extent(renderer).x1 - right_edge
+        if overflow > 0:
+            x, y = annotation.get_position()
+            annotation.set_position((x - overflow * points_per_pixel, y))
+
+
 def _save_group_figure(
     *,
     records: list[dict],
     points_by_variant: dict[str, np.ndarray],
     targets: dict[str, np.ndarray],
     vertices: list[str],
+    display_labels: dict[str, str],
     dni: dict[str, int],
     anchors: list[str],
     tests: list[str],
@@ -122,18 +155,18 @@ def _save_group_figure(
     overlay_cmap = plt.get_cmap("plasma")
     edge_cmap = plt.get_cmap("cividis")
     fig, axes = plt.subplots(2, 2, figsize=(16.8, 12.2), constrained_layout=True)
-    overlay_font = _cjk_font(10.4)
-    error_font = _cjk_font(9.2)
+    overlay_font = FontProperties(size=10.4)
+    error_font = FontProperties(size=9.2)
     for col, record in enumerate(records):
         variant = record["variant"]
         points = points_by_variant[variant]
         overlay_annotations = _draw_overlay(
             axes[0, col], points, targets, record, vertices, dni, anchors, tests,
-            overlay_norm, overlay_cmap, overlay_font, draw_title=False,
+            overlay_norm, overlay_cmap, overlay_font, draw_title=False, display_labels=display_labels,
         )
         error_annotations = _draw_error_map(
             axes[1, col], points, edge_errors[variant], wrong_nodes[variant],
-            edge_norm, edge_cmap, vertices, error_font, clip_labels=False,
+            edge_norm, edge_cmap, vertices, error_font, clip_labels=False, display_labels=display_labels,
         )
         _style_axis(axes[0, col], overlay_extent)
         _style_axis(axes[1, col], _panel_extent(points, [], pad_frac=0.17))
@@ -180,6 +213,8 @@ def _save_group_figure(
     cbar2 = fig.colorbar(edge_map, ax=axes[1, :], orientation="vertical", fraction=0.015, pad=0.012)
     cbar2.set_label("Distance-edge relative error", fontsize=11)
     cbar2.ax.tick_params(labelsize=9)
+    _keep_labels_left_of_colorbar(fig, overlay_annotations, cbar1.ax)
+    _keep_labels_left_of_colorbar(fig, error_annotations, cbar2.ax)
     fig.legend(
         handles=OVERLAY_HANDLES,
         loc="lower center",
@@ -211,6 +246,8 @@ def create_spatial_comparisons(
     outdir.mkdir(parents=True, exist_ok=True)
     graph, vertices, dni, edges, distance_data = load_ini_data_from_csv(FILE_PATHS)
     del graph, edges
+    display_names = _load_country_display_names(COUNTRY_NAMES_PATH, vertices)
+    display_labels = {key: fill(label, width=22, break_long_words=False) for key, label in display_names.items()}
     as_config_path = as_dir / "progressive_config.json"
     bfgs_config_path = bfgs_dir / "bfgs_experiment_config.json"
     as_config = json.loads(as_config_path.read_text(encoding="utf-8"))
@@ -268,6 +305,7 @@ def create_spatial_comparisons(
             points_by_variant=points_by_variant,
             targets=targets,
             vertices=vertices,
+            display_labels=display_labels,
             dni=dni,
             anchors=anchors,
             tests=tests,
@@ -298,6 +336,10 @@ def create_spatial_comparisons(
         "overlay_extent_policy": "one shared equal-aspect extent across all four models",
         "error_map_extent_policy": "independent equal-aspect extent for topology readability",
         "coordinates": "formal y-up simulation coordinates; overlay errors reported in LCC kilometres",
+        "country_display_names": {
+            "source": "data/country_display_names_yu2006.csv",
+            "sha256": _sha256(COUNTRY_NAMES_PATH),
+        },
         "source_sha256": {
             str(path.resolve()): _sha256(path)
             for path in (as_config_path, bfgs_config_path, progressive_selection_path, as_positions_path, bfgs_runs_path, bfgs_positions_path)
